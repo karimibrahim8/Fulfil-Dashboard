@@ -7,14 +7,14 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
 <style>
 /* Theme tokens (same names the Claude dashboard provides) */
 :root {
   --color-bg: #f7f8fa; --color-panel: #ffffff; --color-fg: #1b1f27; --color-fg-muted: #5d6573;
   --color-border-line: #e2e5ea; --color-ok: #1e7f45; --color-warn: #a86400; --color-bad: #c4302b;
-  --font-anthropic-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  --font-anthropic-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+ --font-anthropic-sans: "Montserrat", sans-serif;
+--font-anthropic-serif: "Montserrat", sans-serif;
   --cds-font-size-caption: 12px; --cds-font-size-body: 14px; --cds-font-size-heading: 18px; --cds-font-size-title: 28px;
   --cds-font-weight-medium: 600;
   --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-lg: 20px; --cds-gap-xl: 32px;
@@ -388,6 +388,21 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); fon
     <div class="fx-grid2">
       <div class="fx-card" id="nc-donut"><div class="fx-card-head"><h3>Failed parcels by call check</h3><button class="fx-btn fx-export" type="button" data-export="nc_callcheck" data-name="nc-donut" aria-label="Export nc-donut as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="nc_callcheck" data-h="240" data-label="Donut of failed parcels by call check"></div></div>
       <div class="fx-card" id="nc-reasons"><div class="fx-card-head"><h3>Call check within each failure reason</h3><button class="fx-btn fx-export" type="button" data-export="nc_reasons" data-name="nc-reasons" aria-label="Export nc-reasons as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="nc_reasons" data-label="100% stacked bars of call check by failure reason"></div></div>
+    </div>
+    <div class="fx-card" id="nc-list">
+      <div class="fx-card-head"><h3>Failed parcels in these filters</h3><span class="fx-count" data-draw="rowcount" data-source="nc_list" data-limit="500">—</span><button class="fx-btn fx-export" type="button" data-export="nc_list" data-name="no-call-failed-parcels" aria-label="Export the failed parcels as CSV">Export CSV</button></div>
+      <div class="fx-filters">
+        <label class="fx-field"><span>Call check</span>
+          <select class="dash-select" id="f-cc" aria-label="Call check"><option value="">All call checks</option><option>Called</option><option>No call - customer verified</option><option>No call - refused at door</option><option>No call - suspicious</option></select></label>
+        <label class="fx-field"><span>Failure reason</span>
+          <select class="dash-select" id="f-fr" aria-label="Failure reason"><option value="">All reasons</option><option>Refused at door</option><option>Wants to open</option><option>Postponed</option><option>Customer not reachable</option><option>Wrong address / phone</option><option>No reason recorded</option><option>Other</option></select></label>
+        <button class="fx-btn" type="button" id="f-nc-clear">Show all</button>
+      </div>
+      <p class="fx-note">Click a slice of the donut or a bar segment above to filter this table. Export CSV downloads every row in the table, not only the first 500 on screen.</p>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="nc_list" data-row-key="Brand,Tracking" data-limit="500" data-empty="No failed parcels for these filters">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="Tracking">Tracking</th><th data-field="FailedAt" data-fmt="dt" class="nowrap">Failed</th><th data-field="CourierName">Delivery agent</th><th data-field="CustomerName">Customer</th><th data-field="CustomerPhone" class="nowrap">Phone</th><th data-field="CustomerPhone2" class="nowrap">Phone 2</th><th data-field="City">City</th><th data-field="Governorate">Governorate</th><th data-field="COD" data-fmt="int" class="num">COD (EGP)</th><th data-field="Attempts" data-fmt="int" class="num">Attempts</th><th data-field="Calls" data-fmt="int" class="num">Calls</th><th data-field="CallCheck">Call check</th><th data-field="FailReasonGroup">Reason group</th><th data-field="LastException" class="wide">Last problem</th><th data-field="ConfirmStatus">Confirmation</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
     </div>
   </section>
 

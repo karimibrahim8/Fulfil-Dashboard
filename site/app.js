@@ -19,6 +19,8 @@
     $$('#f-from').forEach((el) => { if (document.activeElement !== el) el.value = p.from || ''; });
     $$('#f-to').forEach((el) => { if (document.activeElement !== el) el.value = p.to || ''; });
     $$('#f-stat').forEach((el) => { el.value = p.stat || 'Median'; });
+    $$('#f-cc').forEach((el) => { el.value = p.cc || ''; });
+    $$('#f-fr').forEach((el) => { el.value = p.fr || ''; });
     $$('#f-search').forEach((el) => { if (document.activeElement !== el) el.value = p.q || ''; });
   };
   const whole = (el) => el.value && el.validity.valid;
@@ -37,6 +39,11 @@
     syncInputs();
   }));
   $$('#f-reset').forEach((b) => b.addEventListener('click', () => { dash.resetParams(); syncInputs(); }));
+
+  // No-call failures table filters
+  [['#f-cc', 'cc'], ['#f-fr', 'fr']].forEach(([sel, key]) => $$(sel).forEach((el) =>
+    el.addEventListener('change', () => dash.setParams({ [key]: el.value || null }))));
+  $$('#f-nc-clear').forEach((b) => b.addEventListener('click', () => dash.setParams({ cc: null, fr: null })));
 
   // Bottlenecks statistic
   $$('#f-stat').forEach((el) => el.addEventListener('change', () => dash.setParams({ stat: el.value })));

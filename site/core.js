@@ -51,7 +51,7 @@ window.FX = (() => {
   // ---------- filters ----------
   const params = () => {
     const p = dash.params();
-    return { brand: p.brand || '', from: p.from || '', to: p.to || '', courier: p.courier || '', payment: p.payment || '', stat: p.stat || 'Median', q: p.q || '', sel: p.sel || '' };
+    return { brand: p.brand || '', from: p.from || '', to: p.to || '', courier: p.courier || '', payment: p.payment || '', stat: p.stat || 'Median', q: p.q || '', sel: p.sel || '', cc: p.cc || '', fr: p.fr || '' };
   };
   const orderFilter = (p, from, to) => (o) =>
     (!p.brand || o.Brand === p.brand) && (!p.courier || o.Courier === p.courier) && (!p.payment || o.Payment === p.payment) &&
@@ -551,6 +551,23 @@ dash.calc('dh_issues', {
   fn: (orders) => orders.filter((o) => o.DataIssue).sort((a, b) => ((b.Created || '') > (a.Created || '') ? 1 : -1))
     .map((o) => ({ OrderKey: o.OrderKey, Brand: o.Brand, Order: o.Order, DataIssue: o.DataIssue, Status: o.Status, Courier: o.Courier, TrackingNumbers: o.TrackingNumbers,
       Created: o.Created, AwbCreated: o.AwbCreated, PickedUp: o.PickedUp, Delivered: o.Delivered })),
+});
+
+dash.calc('nc_list', {
+  inputs: ['orders', 'parcels'], title: 'Failed Bosta parcels (filtered)',
+  description: 'Every failed Bosta parcel in the current filters, with the call check and failure reason picked above the table. Newest failure first.',
+  fn: (orders, parcels) => {
+    const { P, p } = FX.ctx(orders, parcels);
+    const byKey = new Map(orders.map((o) => [o.OrderKey, o]));
+    return P.filter((r) => r.CallCheck && (!p.cc || r.CallCheck === p.cc) && (!p.fr || r.FailReasonGroup === p.fr))
+      .sort((a, b) => ((b.Cancelled || '') > (a.Cancelled || '') ? 1 : -1))
+      .map((r) => {
+        const o = byKey.get(r.OrderKey) || {};
+        return { Brand: r.Brand, Order: r.Order, Tracking: r.Tracking, FailedAt: r.Cancelled, CourierName: r.CourierName, CustomerName: r.CustomerName,
+          CustomerPhone: r.CustomerPhone, CustomerPhone2: r.CustomerPhone2, City: o.City, Governorate: o.Governorate, COD: r.COD, Attempts: r.Attempts,
+          Calls: r.Calls, CallCheck: r.CallCheck, FailReasonGroup: r.FailReasonGroup, LastException: r.LastException, ConfirmStatus: r.ConfirmStatus };
+      });
+  },
 });
 
 dash.calc('rt_kpi', {

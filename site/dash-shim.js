@@ -3,7 +3,7 @@
 // and claude.use('downloads') for CSV exports.
 (() => {
   const DATASETS = { orders: 'data/orders.json', parcels: 'data/parcels.json', attempts: 'data/attempts.json', returns: 'data/returns.json' };
-  const DEFAULTS = { brand: '', from: '', to: '', courier: '', payment: '', stat: 'Median', q: '', sel: '' };
+  const DEFAULTS = { brand: '', from: '', to: '', courier: '', payment: '', stat: 'Median', q: '', sel: '', cc: '', fr: '' };
 
   const loaders = {}, calcs = {}, draws = {}, onDataFns = [];
   const store = {}; // id -> {status, data, columns, meta}

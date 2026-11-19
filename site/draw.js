@@ -204,7 +204,9 @@ window.CH = (() => {
         const v0 = o.percent ? acc / t : acc, v1 = o.percent ? (acc + v) / t : acc + v; acc += v;
         svg.append('rect').attr('x', x(v0)).attr('width', Math.max(0, x(v1) - x(v0))).attr('y', yb(xv)).attr('height', yb.bandwidth()).style('fill', colorOf(s))
           .on('pointermove', (ev) => showTip(el, tip, ev, [[String(xv)], [o.series ? s : o.y, o.percent ? `${FMT.fmt(v / t, 'pct')} (${FMT.fmt(v, 'int')})` : FMT.fmt(v, o.fmt || 'int')]]))
-          .on('pointerleave', () => hideTip(tip));
+          .on('pointerleave', () => hideTip(tip))
+          .style('cursor', o.onPick ? 'pointer' : null)
+          .on('click', o.onPick ? () => o.onPick(xv, s) : null);
         if (o.percent && v / t >= 0.08) svg.append('text').attr('class', 'fx-inbar').attr('x', (x(v0) + x(v1)) / 2).attr('y', yb(xv) + yb.bandwidth() / 2).attr('dy', '0.32em').attr('text-anchor', 'middle').text(FMT.fmt(v / t, 'pct0'));
       }
       if (!o.percent) svg.append('text').attr('class', 'fx-tick fx-val').attr('x', x(tot(xv)) + 6).attr('y', yb(xv) + yb.bandwidth() / 2).attr('dy', '0.32em').text(FMT.fmt(tot(xv), o.fmt || 'int'));
@@ -271,7 +273,9 @@ window.CH = (() => {
     const arcs = d3.pie().sort(null).value((r) => r[o.y])(rows);
     g.selectAll('path').data(arcs).join('path').attr('d', d3.arc().innerRadius(R * 0.58).outerRadius(R)).style('fill', (a) => colorOf(a.data[o.x])).style('stroke', css('--color-bg')).attr('stroke-width', 2)
       .on('pointermove', (ev, a) => showTip(el, tip, ev, [[a.data[o.x]], [o.y, FMT.fmt(a.data[o.y], 'int')], ['Share', FMT.fmt(a.data[o.y] / total, 'pct')]]))
-      .on('pointerleave', () => hideTip(tip));
+      .on('pointerleave', () => hideTip(tip))
+      .style('cursor', o.onPick ? 'pointer' : null)
+      .on('click', o.onPick ? (ev, a) => o.onPick(a.data[o.x]) : null);
     g.append('text').attr('class', 'fx-donut-n').attr('text-anchor', 'middle').attr('dy', '0.1em').text(FMT.fmt(total, 'int'));
     g.append('text').attr('class', 'fx-tick').attr('text-anchor', 'middle').attr('dy', '1.6em').text(o.unit || 'total');
     const lx = 2 * R + 32;
@@ -332,10 +336,12 @@ const CHARTS = {
   rt_reasons: (el, d) => CH.hbars(el, d.slice(0, 12), { x: 'ItemReason', y: 'Returned Items' }),
   rt_mix: (el, d) => CH.donut(el, d, { x: 'ReturnType', y: 'Returns', unit: 'returns' }),
   nc_callcheck: (el, d) => CH.donut(el, d, { x: 'CallCheck', y: 'Parcels', unit: 'failed parcels',
-    colors: { 'No call - suspicious': 'var(--cds-chart-status-critical)', Called: 'var(--cds-chart-muted)' } }),
+    colors: { 'No call - suspicious': 'var(--cds-chart-status-critical)', Called: 'var(--cds-chart-muted)' },
+    onPick: (cc) => dash.setParams({ cc, fr: null }) }),
   nc_reasons: (el, d) => CH.hbars(el, d, { x: 'FailReasonGroup', series: 'CallCheck', y: 'Parcels', percent: true,
     order: ['Called', 'No call - customer verified', 'No call - refused at door', 'No call - suspicious'],
-    colors: { 'No call - suspicious': 'var(--cds-chart-status-critical)', Called: 'var(--cds-chart-muted)' } }),
+    colors: { 'No call - suspicious': 'var(--cds-chart-status-critical)', Called: 'var(--cds-chart-muted)' },
+    onPick: (fr, cc) => dash.setParams({ fr, cc }) }),
 };
 dash.draw('chart', (el) => {
   const id = el.dataset.source, s = dash.data(id);
