@@ -49,6 +49,7 @@ HEAD = """<!doctype html>
   --series-1: #6b9cf0; --series-2: #f0aa5c; --series-3: #4cc2b8; --series-4: #b48cf0; --series-5: #f08aa3;
   --series-6: #9cbd55; --series-7: #b39488; --series-8: #7cc9f0; --series-9: #e0c050;
   color-scheme: dark; } }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; }
 #dash-root { max-width: 1440px; margin: 0 auto; padding-block: 24px 48px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }

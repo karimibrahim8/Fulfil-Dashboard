@@ -50,7 +50,10 @@
       });
     }
   }
-  function schedule() { if (!scheduled) { scheduled = true; requestAnimationFrame(render); } }
+  // A plain timer, not requestAnimationFrame: rAF can stall (background tabs, embedded views),
+  // which left the page showing "—" and ignoring filters.
+  function schedule() { if (!scheduled) { scheduled = true; setTimeout(render, 0); } }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
 
   window.dash = {
     colors: ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)', 'var(--series-6)', 'var(--series-7)', 'var(--series-8)', 'var(--series-9)'],
