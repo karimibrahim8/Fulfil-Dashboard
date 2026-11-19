@@ -44,6 +44,7 @@ jobs:
           BOSTA_OZ_API_KEY: ${{ secrets.BOSTA_OZ_API_KEY }}
           MYLERZ_USER: ${{ secrets.MYLERZ_USER }}
           MYLERZ_PASSWORD: ${{ secrets.MYLERZ_PASSWORD }}
+          ESTEBDAL_API_KEY: ${{ secrets.ESTEBDAL_API_KEY }}
         run: |
           mkdir -p site/data
           cd etl && python refresh.py

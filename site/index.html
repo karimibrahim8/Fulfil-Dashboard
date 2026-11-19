@@ -169,6 +169,7 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); fon
     <button class="fx-tab" role="tab" data-tab="bottlenecks" aria-selected="false">Bottlenecks</button>
     <button class="fx-tab" role="tab" data-tab="courier-by-zone" aria-selected="false">Courier by zone</button>
     <button class="fx-tab" role="tab" data-tab="no-call" aria-selected="false">No-call failures</button>
+    <button class="fx-tab" role="tab" data-tab="returns" aria-selected="false">Returns (OR)</button>
     <button class="fx-tab" role="tab" data-tab="data-health" aria-selected="false">Data health</button>
   </nav>
 
@@ -390,6 +391,56 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); fon
     </div>
   </section>
 
+  <!-- ================= Returns (OR) ================= -->
+  <section class="fx-page" id="returns" hidden>
+    <p class="fx-note">Returns of brand OR from E-stebdal. Cancelled returns are left out. The date filter uses the return date; the brand filter shows nothing for brands other than OR.</p>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="rt_kpi" data-name="returns-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Returns</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Returns Count" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Returned items</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Returned Items" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Return rate (of delivered OR orders)</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Return Rate %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Exchanges</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Exchange %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Refunds paid</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Refunds Paid (EGP)" data-row="0" data-fmt="egp">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Returned for size</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Size Issue %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Median hours to approve</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Median Hours To Approve" data-row="0" data-fmt="h">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Waiting for review</span><b class="fx-value" data-draw="kpi" data-source="rt_kpi" data-field="Waiting Review" data-row="0" data-fmt="int">—</b></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="rt-reasons"><div class="fx-card-head"><h3>Returned items by reason</h3><button class="fx-btn fx-export" type="button" data-export="rt_reasons" data-name="returns-reasons" aria-label="Export returns by reason as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="rt_reasons" data-label="Bars of returned items by reason"></div></div>
+      <div class="fx-card" id="rt-mix"><div class="fx-card-head"><h3>Exchanges vs refunds</h3><button class="fx-btn fx-export" type="button" data-export="rt_mix" data-name="returns-type" aria-label="Export exchanges vs refunds as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="rt_mix" data-h="240" data-label="Donut of returns by exchange or refund"></div></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="rt-types">
+        <div class="fx-card-head"><h3>Size problems by product type (items)</h3><button class="fx-btn fx-export" type="button" data-export="rt_types" data-name="returns-product-types" aria-label="Export size problems by product type as CSV">Export CSV</button></div>
+        <div class="fx-tablewrap"><table class="fx-table" data-source="rt_types" data-row-key="ItemProductType">
+          <thead><tr><th data-field="ItemProductType">Product type</th><th data-field="Too small" data-fmt="int" class="num">Too small</th><th data-field="Too large" data-fmt="int" class="num">Too large</th><th data-field="Not size" data-fmt="int" class="num">Not size</th><th data-field="Total" data-fmt="int" class="num">Total</th></tr></thead>
+          <tbody data-draw="rows"></tbody>
+        </table></div>
+      </div>
+      <div class="fx-card" id="rt-review">
+        <div class="fx-card-head"><h3>Waiting for review, oldest first</h3><span class="fx-count" data-draw="rowcount" data-source="rt_review" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="rt_review" data-name="returns-needs-review" aria-label="Export returns waiting for review as CSV">Export CSV</button></div>
+        <div class="fx-tablewrap"><table class="fx-table" data-source="rt_review" data-row-key="Key" data-limit="300" data-empty="No returns are waiting for review">
+          <thead><tr><th data-field="ReturnNumber">Return</th><th data-field="OrderNumber">Order</th><th data-field="ReturnDate" data-fmt="dt" class="nowrap">Requested</th><th data-field="ItemProduct">Product</th><th data-field="ItemReason">Reason</th><th data-field="ItemNote" class="wide">Customer note</th></tr></thead>
+          <tbody data-draw="rows"></tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="fx-card" id="rt-products">
+      <div class="fx-card-head"><h3>Most returned products</h3><span class="fx-count" data-draw="rowcount" data-source="rt_products" data-limit="100">—</span><button class="fx-btn fx-export" type="button" data-export="rt_products" data-name="returns-products" aria-label="Export most returned products as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="rt_products" data-row-key="Key" data-limit="100">
+        <thead><tr><th data-field="ItemProduct" class="wide">Product</th><th data-field="ItemSku">SKU</th><th data-field="Returned Items" data-fmt="int" class="num">Items</th><th data-field="Returned Item Value" data-fmt="int" class="num">Value (EGP)</th><th data-field="Size Issue %" data-fmt="bar">Returned for size</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="rt-all">
+      <div class="fx-card-head"><h3>All returns, newest first</h3><span class="fx-count" data-draw="rowcount" data-source="rt_all" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="rt_all" data-name="returns-all" aria-label="Export all returns as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="rt_all" data-row-key="Key" data-limit="300" data-empty="No returns for these filters">
+        <thead><tr><th data-field="ReturnNumber">Return</th><th data-field="OrderNumber">Order</th><th data-field="ReturnDate" data-fmt="dt" class="nowrap">Requested</th><th data-field="Status">Status</th><th data-field="ReturnType">Type</th><th data-field="RefundMethod">Refund method</th><th data-field="OrderTotal" data-fmt="int" class="num">Order total</th><th data-field="ItemProduct" class="wide">Product</th><th data-field="ItemSize">Size</th><th data-field="ItemValue" data-fmt="int" class="num">Item value</th><th data-field="ItemReason">Reason</th><th data-field="OutgoingSkus">Exchange SKU</th><th data-field="OutgoingSizes">Exchange size</th><th data-field="NetBalance" data-fmt="int" class="num">Net balance</th><th data-field="BostaReturnTracking">Bosta pickup</th><th data-field="BostaReturnStatus">Pickup status</th><th data-field="BostaPickedUp" data-fmt="dt" class="nowrap">Picked up</th><th data-field="CustomerName">Customer</th><th data-field="CustomerPhone" class="nowrap">Phone</th><th data-field="ItemNote" class="wide">Customer note</th><th data-field="ReturnNotes" class="wide">Return notes</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
   <!-- ================= Data health ================= -->
   <section class="fx-page" id="data-health" hidden>
     <p class="fx-note">This page checks the data itself and ignores the filters above. Hours are counted to now.</p>
@@ -399,6 +450,7 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); fon
       <div class="fx-kpi"><span class="fx-label">Parcels not matched to an order</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Unmatched Parcels" data-row="0" data-fmt="int">—</b></div>
       <div class="fx-kpi"><span class="fx-label">Orders with data issues</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Orders With Data Issues" data-row="0" data-fmt="int">—</b></div>
       <div class="fx-kpi"><span class="fx-label">Attempts the page could not read</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Unparsed Attempts" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">E-stebdal returns connection</span><b class="fx-status" data-draw="kpi" data-source="dh_estebdal" data-field="E-stebdal Status" data-row="0">—</b></div>
     </div>
     <div class="fx-card" id="dh-brands">
       <div class="fx-card-head"><h3>Shopify orders by brand</h3><button class="fx-btn fx-export" type="button" data-export="dh_brands" data-name="dh-brands" aria-label="Export dh-brands as CSV">Export CSV</button></div>

@@ -287,6 +287,83 @@ def build(orders: pd.DataFrame, bosta: pd.DataFrame, now: datetime):
     return out_orders, bosta, attempts
 
 
+# ---------------- Returns (E-stebdal, brand OR) ----------------
+def build_returns(returns: pd.DataFrame, bosta: pd.DataFrame, orders: pd.DataFrame) -> pd.DataFrame:
+    """Calculated columns of the Power BI 'Returns' table. One row per returned item."""
+    r = returns.copy()
+    for c in r.columns:
+        if str(r[c].dtype).startswith("datetime"):
+            r[c] = r[c].astype(object).where(r[c].notna(), None)
+    if r.empty:
+        return r
+
+    def hours_to_approve(row):
+        a, d = row.get("ApprovedAt"), row.get("ReturnDate")
+        if _blank(a) or _blank(d) or a < d:
+            return None
+        return _round1((a - d).total_seconds() / 3600)
+
+    r["HoursToApprove"] = r.apply(hours_to_approve, axis=1)
+
+    def size_issue(reason):
+        if _contains(reason, "too small"):
+            return "Too small"
+        if _contains(reason, "too large"):
+            return "Too large"
+        return "Not size"
+
+    r["SizeIssue"] = r["ItemReason"].map(size_issue)
+    r["ReturnType"] = r["IsExchange"].map(lambda x: "Exchange" if x is True else "Refund")
+
+    # Latest OR return/exchange pickup in Bosta for the order
+    b = bosta[(bosta["Brand"] == "OR") & bosta["Type"].isin(["Customer Return Pickup", "Exchange"])]
+    b = b.sort_values("Created", ascending=False, na_position="last")
+    by_tracking = {t: g for t, g in bosta.groupby("Tracking")}
+    cache = {}
+
+    def match(order_key, order_no):
+        key = (order_key, order_no)
+        if key in cache:
+            return cache[key]
+        num = (order_no or "").replace("#", "")
+        hit = None
+        for x in b.itertuples(index=False):
+            ref = getattr(x, "BusinessRef", None) or ""
+            if (order_key is not None and x.OrderKey == order_key) or (num and num.lower() in str(ref).lower()):
+                hit = x.Tracking
+                break
+        cache[key] = hit
+        return hit
+
+    tr, st, ty, pk = [], [], [], []
+    for row in r.itertuples(index=False):
+        t = match(row.OrderKey, row.OrderNumber)
+        tr.append(t)
+        g = by_tracking.get(t) if t is not None else None
+        if g is None:
+            st.append("No Bosta pickup yet" if t is None else None)
+            ty.append(None)
+            pk.append(None)
+        else:
+            st.append(max((v for v in g["State"] if not _blank(v)), default=None))
+            ty.append(max((v for v in g["Type"] if not _blank(v)), default=None))
+            pk.append(max((v for v in g["PickedUp"] if not _blank(v)), default=None))
+    r["BostaReturnTracking"], r["BostaReturnStatus"], r["BostaReturnType"], r["BostaPickedUp"] = tr, st, ty, pk
+
+    o = orders.set_index("OrderKey")
+    r["OrderTotal"] = r["OrderKey"].map(o["Total"]) if "Total" in o else None
+    r["OrderPayment"] = r["OrderKey"].map(o["Payment"]) if "Payment" in o else None
+    return r
+
+
+RETURN_COLS = ["Brand", "ReturnId", "ReturnNumber", "OrderNumber", "OrderKey", "Status", "ReturnDate", "ApprovedAt",
+               "RefundMethod", "NetBalance", "IsExchange", "OutgoingSkus", "OutgoingSizes", "ItemSku", "ItemProduct",
+               "ItemProductType", "ItemSize", "ItemQty", "ItemValue", "ItemReason", "ItemNote", "ReturnNotes",
+               "CustomerName", "CustomerPhone", "HoursToApprove", "SizeIssue", "ReturnType", "BostaReturnTracking",
+               "BostaReturnStatus", "BostaPickedUp", "OrderTotal", "OrderPayment", "ApiStatus"]
+# Left out on purpose: CustomerEmail, RefundInfo and ProofOfRefund (bank / wallet details), never shown on the page.
+
+
 # ---------------- JSON export (columnar, compact) ----------------
 ORDER_COLS = ["Brand", "OrderKey", "Order", "Created", "Cancelled", "Payment", "Total", "City", "Governorate",
               "FulfilledFrom", "TrackingNumbers", "FirstFulfilled", "AwbCreated", "PickedUp", "Delivered",
@@ -330,16 +407,18 @@ def to_columnar(df: pd.DataFrame, cols):
     return out
 
 
-def write_files(orders, bosta, attempts, now: datetime, outdir: str, source_note: str) -> dict:
-    """Write orders.json, parcels.json and attempts.json for the dashboard. Returns {name: path}."""
+def write_files(orders, bosta, attempts, now: datetime, outdir: str, source_note: str, returns=None) -> dict:
+    """Write orders.json, parcels.json, attempts.json (and returns.json) for the dashboard. Returns {name: path}."""
     import json
     import os
     os.makedirs(outdir, exist_ok=True)
     code = open(__file__, encoding="utf-8").read()
     stamp = now.strftime("%Y-%m-%dT%H:%M")
     out = {}
-    for name, df, cols in (("orders", orders, ORDER_COLS), ("parcels", bosta, BOSTA_COLS),
-                           ("attempts", attempts, ATTEMPT_COLS)):
+    sets = [("orders", orders, ORDER_COLS), ("parcels", bosta, BOSTA_COLS), ("attempts", attempts, ATTEMPT_COLS)]
+    if returns is not None:
+        sets.append(("returns", returns, RETURN_COLS))
+    for name, df, cols in sets:
         doc = {
             "refreshedAt": stamp,
             "n": int(len(df)),

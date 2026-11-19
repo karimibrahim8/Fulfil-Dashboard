@@ -35,7 +35,8 @@ def load_env(path):
                 if v.startswith('"') and '"' in v[1:]:
                     v = v[1:v.index('"', 1)]
                 env[k.strip()] = v.strip("'")
-    env.update({k: v for k, v in os.environ.items() if k in env or k.startswith(("SHOPIFY_", "BOSTA_", "MYLERZ_"))})
+    env.update({k: v for k, v in os.environ.items()
+                if k in env or k == "DAYS_BACK" or k.startswith(("SHOPIFY_", "BOSTA_", "MYLERZ_", "ESTEBDAL_"))})
     return env
 
 
@@ -349,6 +350,90 @@ def mylerz(env, since, cutoff):
     return out
 
 
+# ---------------- E-stebdal returns (brand OR) ----------------
+RETURN_FIELDS = ["Brand", "ReturnId", "ReturnNumber", "OrderNumber", "OrderKey", "Status", "Classification", "ReturnDate",
+                 "ApprovedAt", "ReceivedAt", "RejectedAt", "ClosedAt", "UpdatedAt", "RefundMethod", "CustomerName",
+                 "CustomerPhone", "ReturnNotes", "NetBalance", "City", "Province", "IsExchange", "OutgoingItems",
+                 "OutgoingSkus", "OutgoingSizes", "ItemSku", "ItemProduct", "ItemProductType", "ItemSize", "ItemQty",
+                 "ItemValue", "ItemOriginalValue", "ItemReason", "ItemNote", "ApiStatus"]
+
+
+def estebdal_returns(env, cutoff):
+    """Returns from the E-stebdal API, one row per returned item. Never raises: a failure is reported in ApiStatus."""
+    key = env.get("ESTEBDAL_API_KEY", "")
+    enabled = env.get("ESTEBDAL_ENABLED", "YES").strip().upper() == "YES" and bool(key)
+    if not enabled:
+        print("  E-stebdal: disabled")
+        return pd.DataFrame([{"ApiStatus": "Disabled"}], columns=RETURN_FIELDS)
+
+    def page(p):
+        try:
+            r = requests.get("https://api.e-stebdal.com/api/v1/public/returns", timeout=120,
+                             headers={"x-api-key": key, "Accept": "application/json"},
+                             params={"page": str(p), "limit": "250", "sort": '{"field":"date","direction":"desc"}'})
+        except requests.RequestException as e:
+            return None, f"E-stebdal error: {str(e)[:200]}"
+        if r.status_code != 200:
+            return None, f"E-stebdal {r.status_code}: {r.text[:200]}"
+        return r.json(), "OK"
+
+    body, status = page(1)
+    if body is None:
+        print("  E-stebdal:", status)
+        return pd.DataFrame([{"ApiStatus": status}], columns=RETURN_FIELDS)
+    items, p = [], 1
+    while body is not None:
+        data = body.get("data") or []
+        items += data
+        last = iso_to_cairo(data[-1].get("date")) if data else None
+        if not G(body, "meta", "hasNextPage") or not data or (last is not None and last < cutoff):
+            break
+        p += 1
+        body, st = page(p)
+        if body is None:
+            print("  E-stebdal page", p, st)
+
+    def size_of(it):
+        for pr in it.get("properties") or []:
+            if str(pr.get("name") or "").lower() == "size":
+                return pr.get("value")
+        return None
+
+    def text_list(v):
+        return ", ".join("" if x is None else str(x) for x in (v or []))
+
+    rows = []
+    for r in items:
+        dt = iso_to_cairo(r.get("date"))
+        if dt is None or dt < cutoff:
+            continue
+        out = r.get("outgoingItems") or []
+        order_no = r.get("orderNumber")
+        base = dict(
+            Brand="OR", ReturnId=r.get("id"), ReturnNumber=r.get("returnNumber"), OrderNumber=order_no,
+            OrderKey=None if order_no is None else f"OR|{order_no}", Status=r.get("status"),
+            Classification=r.get("classification"), ReturnDate=dt, ApprovedAt=iso_to_cairo(r.get("approvedAt")),
+            ReceivedAt=iso_to_cairo(r.get("receivedAt")), RejectedAt=iso_to_cairo(r.get("rejectedAt")),
+            ClosedAt=iso_to_cairo(r.get("closedAt")), UpdatedAt=iso_to_cairo(r.get("updatedAt")),
+            RefundMethod=G(r, "monetaryDetails", "method"), CustomerName=G(r, "customerInfo", "customerName"),
+            CustomerPhone=G(r, "customerInfo", "phone"), ReturnNotes=r.get("notes"),
+            NetBalance=G(r, "monetaryDetails", "resolvedNetBalance"), City=G(r, "customerInfo", "city"),
+            Province=G(r, "customerInfo", "province"), IsExchange=len(out) > 0, OutgoingItems=len(out),
+            OutgoingSkus=text_list([x.get("sku") for x in out]), OutgoingSizes=text_list([size_of(x) for x in out]),
+            ApiStatus="OK")
+        its = r.get("refundedItems") or [None]
+        for it in its:
+            row = dict(base)
+            if it is not None:
+                row.update(ItemSku=it.get("sku"), ItemProduct=it.get("productName"),
+                           ItemProductType=it.get("productType"), ItemSize=size_of(it), ItemQty=it.get("quantity"),
+                           ItemValue=it.get("totalValue"), ItemOriginalValue=it.get("originalValue"),
+                           ItemReason=it.get("reason"), ItemNote=it.get("note"))
+            rows.append(row)
+    print(f"  E-stebdal: {len(rows)} returned items")
+    return pd.DataFrame(rows, columns=RETURN_FIELDS)
+
+
 def main():
     env = load_env(os.path.join(HERE, ".env"))
     days_back = int(env.get("DAYS_BACK", "60"))
@@ -372,11 +457,14 @@ def main():
         kept.append(r)
     bosta = pd.DataFrame(kept)
     o, b, a = T.build(orders, bosta, now)
+    returns = T.build_returns(estebdal_returns(env, cutoff), bosta, o)
     out_dir = os.environ.get("OUT_DIR") or os.path.join(HERE, "..", "data")
-    paths = T.write_files(o, b, a, now, out_dir, f"Shopify, Bosta and Mylerz APIs, last {days_back} days")
+    paths = T.write_files(o, b, a, now, out_dir, f"Shopify, Bosta, Mylerz and E-stebdal APIs, last {days_back} days",
+                          returns=returns)
     summary = {k: {"path": os.path.abspath(p), "bytes": os.path.getsize(p)} for k, p in paths.items()}
     summary["refreshedAt"] = now.strftime("%Y-%m-%dT%H:%M")
-    summary["rows"] = {"orders": len(o), "parcels": len(b), "attempts": len(a)}
+    summary["rows"] = {"orders": len(o), "parcels": len(b), "attempts": len(a), "returns": len(returns)}
+    summary["estebdal"] = str(returns["ApiStatus"].iloc[0]) if len(returns) else "OK (no returns)"
     print(json.dumps(summary, indent=2))
 
 

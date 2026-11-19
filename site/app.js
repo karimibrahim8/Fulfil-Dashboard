@@ -1,6 +1,6 @@
 // Fulfil dashboard: tabs and the filter controls. Only listens and sets values/hidden here.
 (() => {
-  const PAGES = ['overview', 'action-list', 'performance', 'order-search', 'deep-dive', 'bottlenecks', 'courier-by-zone', 'no-call', 'data-health'];
+  const PAGES = ['overview', 'action-list', 'performance', 'order-search', 'deep-dive', 'bottlenecks', 'courier-by-zone', 'no-call', 'returns', 'data-health'];
   const $$ = (sel) => [...document.querySelectorAll(sel)];
 
   function show(id) {

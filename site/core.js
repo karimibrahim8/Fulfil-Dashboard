@@ -14,6 +14,7 @@ function decodeColumns({ answer }) {
 dash.loader('orders', { description: 'Unpacks the column-by-column file into one row per Shopify order.', fn: decodeColumns });
 dash.loader('parcels', { description: 'Unpacks the column-by-column file into one row per Bosta or Mylerz parcel.', fn: decodeColumns });
 dash.loader('attempts', { description: 'Unpacks the column-by-column file into one row per delivery attempt.', fn: decodeColumns });
+dash.loader('returns', { description: 'Unpacks the column-by-column file into one row per returned item (E-stebdal, brand OR).', fn: decodeColumns });
 
 window.FX = (() => {
   const isNum = (v) => typeof v === 'number' && !Number.isNaN(v);
@@ -166,7 +167,32 @@ window.FX = (() => {
   const maxOf = (rows, f) => rows.reduce((m, r) => (r[f] && (!m || r[f] > m) ? r[f] : m), null);
   const minOf = (rows, f) => rows.reduce((m, r) => (r[f] && (!m || r[f] < m) ? r[f] : m), null);
 
-  return { isNum, median, p90, avg, div, count, sum, day, ms, groupBy, cairoNow, addDays, shiftMonth, params, ctx, lastMonth, M, PM, AM, STAGES, stageHours, hoursBetween, daysBetween, maxOf, minOf };
+  // ---------- returns (E-stebdal, brand OR) ----------
+  // Brand and order-date filters apply: a return counts when its return date is in the range.
+  function rctx(returns) {
+    const p = params();
+    const R = (p.brand && p.brand !== 'OR') ? [] : returns.filter((r) => r.ReturnId &&
+      (!p.from || FX_day(r.ReturnDate) >= p.from) && (!p.to || FX_day(r.ReturnDate) <= p.to));
+    return { R, A: R.filter((r) => r.Status !== 'Cancelled') };
+  }
+  const FX_day = day;
+  const distinct = (rows, f) => new Set(rows.map((r) => r[f]).filter((v) => v != null)).size;
+  const RM = {
+    count: (A) => distinct(A, 'ReturnId'),
+    items: (A) => sum(A, 'ItemQty'),
+    value: (A) => sum(A, 'ItemValue'),
+    exchangePct: (A) => div(distinct(A.filter((r) => r.IsExchange === 1), 'ReturnId'), distinct(A, 'ReturnId')),
+    refundsPaid: (A) => {
+      const seen = new Map();
+      A.forEach((r) => { if (r.NetBalance > 0) seen.set(r.ReturnId + '|' + r.NetBalance, r.NetBalance); });
+      return [...seen.values()].reduce((a, b) => a + b, 0);
+    },
+    sizePct: (A) => div(sum(A.filter((r) => r.SizeIssue !== 'Not size'), 'ItemQty'), sum(A, 'ItemQty')),
+    medApprove: (A) => median(A, 'HoursToApprove'),
+    waitingReview: (R) => distinct(R.filter((r) => r.Status === 'Needs Review'), 'ReturnId'),
+  };
+
+  return { isNum, median, p90, avg, div, count, sum, day, ms, groupBy, cairoNow, addDays, shiftMonth, params, ctx, lastMonth, M, PM, AM, STAGES, stageHours, hoursBetween, daysBetween, maxOf, minOf, rctx, distinct, RM };
 })();
 
 // ---------------- calculations (each one shows its working in Sources) ----------------
@@ -525,6 +551,60 @@ dash.calc('dh_issues', {
   fn: (orders) => orders.filter((o) => o.DataIssue).sort((a, b) => ((b.Created || '') > (a.Created || '') ? 1 : -1))
     .map((o) => ({ OrderKey: o.OrderKey, Brand: o.Brand, Order: o.Order, DataIssue: o.DataIssue, Status: o.Status, Courier: o.Courier, TrackingNumbers: o.TrackingNumbers,
       Created: o.Created, AwbCreated: o.AwbCreated, PickedUp: o.PickedUp, Delivered: o.Delivered })),
+});
+
+dash.calc('rt_kpi', {
+  inputs: ['orders', 'returns'], title: 'Returns headline figures',
+  description: 'OR returns from E-stebdal, cancelled returns left out. Return rate = orders with a return ÷ delivered OR orders.',
+  fn: (orders, returns) => {
+    const { R, A } = FX.rctx(returns), RM = FX.RM;
+    const delivered = FX.M.delivered(FX.ctx(orders).O.filter((o) => o.Brand === 'OR'));
+    return [{ 'Returns Count': RM.count(A), 'Returned Items': RM.items(A), 'Return Rate %': FX.div(FX.distinct(A, 'OrderKey'), delivered),
+      'Exchange %': RM.exchangePct(A), 'Refunds Paid (EGP)': RM.refundsPaid(A), 'Size Issue %': RM.sizePct(A),
+      'Median Hours To Approve': RM.medApprove(A), 'Waiting Review': RM.waitingReview(R), 'Returned Item Value': RM.value(A) }];
+  },
+});
+dash.calc('rt_reasons', {
+  inputs: ['returns'], title: 'Returned items by reason', description: 'Returned items (not cancelled) by the reason the customer gave.',
+  fn: (returns) => [...FX.groupBy(FX.rctx(returns).A.filter((r) => r.ItemReason), 'ItemReason')]
+    .map(([k, g]) => ({ ItemReason: k, 'Returned Items': FX.sum(g, 'ItemQty') })).sort((a, b) => b['Returned Items'] - a['Returned Items']),
+});
+dash.calc('rt_types', {
+  inputs: ['returns'], title: 'Size problems by product type', description: 'Returned items per product type, split by too small, too large or not a size issue.',
+  fn: (returns) => [...FX.groupBy(FX.rctx(returns).A, (r) => r.ItemProductType || '(blank)')].map(([k, g]) => {
+    const s = (lab) => FX.sum(g.filter((r) => r.SizeIssue === lab), 'ItemQty');
+    return { ItemProductType: k, 'Too small': s('Too small'), 'Too large': s('Too large'), 'Not size': s('Not size'), Total: FX.sum(g, 'ItemQty') };
+  }).sort((a, b) => b.Total - a.Total),
+});
+dash.calc('rt_review', {
+  inputs: ['returns'], title: 'Returns waiting for review', description: 'Returned items whose return is still Needs Review in E-stebdal, oldest first.',
+  fn: (returns) => FX.rctx(returns).R.filter((r) => r.Status === 'Needs Review').sort((a, b) => ((a.ReturnDate || '') < (b.ReturnDate || '') ? -1 : 1))
+    .map((r, i) => ({ Key: String(i + 1), ReturnNumber: r.ReturnNumber, OrderNumber: r.OrderNumber, ReturnDate: r.ReturnDate, ItemProduct: r.ItemProduct,
+      ItemReason: r.ItemReason, ItemNote: r.ItemNote, Status: r.Status })),
+});
+dash.calc('rt_products', {
+  inputs: ['returns'], title: 'Most returned products', description: 'Returned items and value per product, with the share returned for size.',
+  fn: (returns) => [...FX.groupBy(FX.rctx(returns).A.filter((r) => r.ItemProduct), (r) => r.ItemProduct + '|' + (r.ItemSku || ''))].map(([k, g]) => {
+    const [p, s] = k.split('|');
+    return { Key: k, ItemProduct: p, ItemSku: s, 'Returned Items': FX.sum(g, 'ItemQty'), 'Returned Item Value': FX.sum(g, 'ItemValue'), 'Size Issue %': FX.RM.sizePct(g) };
+  }).sort((a, b) => b['Returned Items'] - a['Returned Items']),
+});
+dash.calc('rt_mix', {
+  inputs: ['returns'], title: 'Exchanges vs refunds', description: 'Returns (not cancelled) that became an exchange or a refund.',
+  fn: (returns) => [...FX.groupBy(FX.rctx(returns).A, 'ReturnType')].map(([k, g]) => ({ ReturnType: k, Returns: FX.distinct(g, 'ReturnId') })).sort((a, b) => b.Returns - a.Returns),
+});
+dash.calc('rt_all', {
+  inputs: ['returns'], title: 'All returns', description: 'Every returned item (not cancelled), newest first, with the Bosta pickup that brings it back.',
+  fn: (returns) => FX.rctx(returns).A.slice().sort((a, b) => ((b.ReturnDate || '') > (a.ReturnDate || '') ? 1 : -1))
+    .map((r, i) => ({ Key: String(i + 1), ReturnNumber: r.ReturnNumber, OrderNumber: r.OrderNumber, ReturnDate: r.ReturnDate, Status: r.Status, ReturnType: r.ReturnType,
+      RefundMethod: r.RefundMethod, OrderTotal: r.OrderTotal, ItemProduct: r.ItemProduct, ItemSize: r.ItemSize, ItemValue: r.ItemValue, ItemReason: r.ItemReason,
+      OutgoingSkus: r.OutgoingSkus, OutgoingSizes: r.OutgoingSizes, NetBalance: r.NetBalance, BostaReturnTracking: r.BostaReturnTracking,
+      BostaReturnStatus: r.BostaReturnStatus, BostaPickedUp: r.BostaPickedUp, CustomerName: r.CustomerName, CustomerPhone: r.CustomerPhone,
+      ItemNote: r.ItemNote, ReturnNotes: r.ReturnNotes })),
+});
+dash.calc('dh_estebdal', {
+  inputs: ['returns'], title: 'E-stebdal connection', description: 'Whether the last refresh could read returns from E-stebdal.',
+  fn: (returns) => [{ 'E-stebdal Status': (returns.find((r) => r.ApiStatus) || {}).ApiStatus || 'No data', 'Returns Loaded': FX.distinct(returns, 'ReturnId') }],
 });
 
 dash.calc('filter_choices', {

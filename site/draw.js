@@ -270,7 +270,7 @@ window.CH = (() => {
     const g = svg.append('g').attr('transform', `translate(${R + 8},${h / 2})`);
     const arcs = d3.pie().sort(null).value((r) => r[o.y])(rows);
     g.selectAll('path').data(arcs).join('path').attr('d', d3.arc().innerRadius(R * 0.58).outerRadius(R)).style('fill', (a) => colorOf(a.data[o.x])).style('stroke', css('--color-bg')).attr('stroke-width', 2)
-      .on('pointermove', (ev, a) => showTip(el, tip, ev, [[a.data[o.x]], ['Parcels', FMT.fmt(a.data[o.y], 'int')], ['Share', FMT.fmt(a.data[o.y] / total, 'pct')]]))
+      .on('pointermove', (ev, a) => showTip(el, tip, ev, [[a.data[o.x]], [o.y, FMT.fmt(a.data[o.y], 'int')], ['Share', FMT.fmt(a.data[o.y] / total, 'pct')]]))
       .on('pointerleave', () => hideTip(tip));
     g.append('text').attr('class', 'fx-donut-n').attr('text-anchor', 'middle').attr('dy', '0.1em').text(FMT.fmt(total, 'int'));
     g.append('text').attr('class', 'fx-tick').attr('text-anchor', 'middle').attr('dy', '1.6em').text(o.unit || 'total');
@@ -329,6 +329,8 @@ const CHARTS = {
   dd_confirm: (el, d) => CH.hbars(el, d, { x: 'ConfirmStatus', y: 'Parcel Success %', fmt: 'pct', max: 1 }),
   bn_stages: (el, d) => CH.waterfall(el, d, { x: 'Stage', y: 'Hours', stat: (d[0] && d[0].Stat) || 'Median' }),
   cz_bars: (el, d) => CH.hgroup(el, d, { x: 'Governorate', series: 'Courier', y: 'Delivery Success %', fmt: 'pct', max: 1, order: ['Bosta', 'Mylerz'], extra: 'Closed' }),
+  rt_reasons: (el, d) => CH.hbars(el, d.slice(0, 12), { x: 'ItemReason', y: 'Returned Items' }),
+  rt_mix: (el, d) => CH.donut(el, d, { x: 'ReturnType', y: 'Returns', unit: 'returns' }),
   nc_callcheck: (el, d) => CH.donut(el, d, { x: 'CallCheck', y: 'Parcels', unit: 'failed parcels',
     colors: { 'No call - suspicious': 'var(--cds-chart-status-critical)', Called: 'var(--cds-chart-muted)' } }),
   nc_reasons: (el, d) => CH.hbars(el, d, { x: 'FailReasonGroup', series: 'CallCheck', y: 'Parcels', percent: true,
