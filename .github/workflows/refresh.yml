@@ -1,0 +1,62 @@
+name: Refresh data and deploy
+
+on:
+  schedule:
+    # Every 2 hours, 8 AM to 10 PM Cairo winter time (UTC+2). Times are UTC.
+    - cron: "0 6-20/2 * * *"
+  workflow_dispatch: {}   # "Run workflow" button for a manual refresh
+  push:
+    branches: [main]
+    paths: ["site/**", "etl/**", ".github/workflows/**"]
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Install
+        run: pip install -r etl/requirements.txt
+
+      - name: Pull data from Shopify, Bosta and Mylerz
+        env:
+          OUT_DIR: ${{ github.workspace }}/site/data
+          DAYS_BACK: ${{ secrets.DAYS_BACK }}
+          SHOPIFY_DALYDRESS_CLIENT_ID: ${{ secrets.SHOPIFY_DALYDRESS_CLIENT_ID }}
+          SHOPIFY_DALYDRESS_CLIENT_SECRET: ${{ secrets.SHOPIFY_DALYDRESS_CLIENT_SECRET }}
+          SHOPIFY_OR_CLIENT_ID: ${{ secrets.SHOPIFY_OR_CLIENT_ID }}
+          SHOPIFY_OR_CLIENT_SECRET: ${{ secrets.SHOPIFY_OR_CLIENT_SECRET }}
+          SHOPIFY_OZ_CLIENT_ID: ${{ secrets.SHOPIFY_OZ_CLIENT_ID }}
+          SHOPIFY_OZ_CLIENT_SECRET: ${{ secrets.SHOPIFY_OZ_CLIENT_SECRET }}
+          BOSTA_DALYDRESS_API_KEY: ${{ secrets.BOSTA_DALYDRESS_API_KEY }}
+          BOSTA_OR_API_KEY: ${{ secrets.BOSTA_OR_API_KEY }}
+          BOSTA_OZ_API_KEY: ${{ secrets.BOSTA_OZ_API_KEY }}
+          MYLERZ_USER: ${{ secrets.MYLERZ_USER }}
+          MYLERZ_PASSWORD: ${{ secrets.MYLERZ_PASSWORD }}
+        run: |
+          mkdir -p site/data
+          cd etl && python refresh.py
+
+      - name: Check the data files
+        run: |
+          for f in orders parcels attempts; do
+            test -s "site/data/$f.json" || { echo "site/data/$f.json is missing or empty"; exit 1; }
+          done
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=fulfil-dashboard --branch=main --commit-dirty=true

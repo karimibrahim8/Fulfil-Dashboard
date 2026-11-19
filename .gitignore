@@ -1,0 +1,10 @@
+# Never commit keys or customer data
+.env
+*.env
+fulfil-dashboard/
+repo/
+site/data/
+data/
+__pycache__/
+.venv/
+.claude/

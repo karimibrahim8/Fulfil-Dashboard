@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fulfilment Dashboard</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
+<style>
+/* Theme tokens (same names the Claude dashboard provides) */
+:root {
+  --color-bg: #f7f8fa; --color-panel: #ffffff; --color-fg: #1b1f27; --color-fg-muted: #5d6573;
+  --color-border-line: #e2e5ea; --color-ok: #1e7f45; --color-warn: #a86400; --color-bad: #c4302b;
+  --font-anthropic-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-anthropic-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: 12px; --cds-font-size-body: 14px; --cds-font-size-heading: 18px; --cds-font-size-title: 28px;
+  --cds-font-weight-medium: 600;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-lg: 20px; --cds-gap-xl: 32px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 16px; --cds-pad-xl: 24px;
+  --cds-radius: 8px;
+  --cds-chart-muted: #b9bfc9; --cds-chart-status-critical: #d6453d; --cds-chart-grid: #eceef2; --cds-chart-axis: #c9ced6;
+  --cds-chart-reference: #8b93a1; --cds-text-secondary: #5d6573;
+  --cds-surface-popover: #ffffff; --cds-border: #d9dde3; --cds-shadow-popover: 0 6px 24px rgba(20, 24, 33, .14);
+  --series-1: #2f6fdf; --series-2: #e3913a; --series-3: #2aa198; --series-4: #9b5de5; --series-5: #e0607e;
+  --series-6: #6c8a2b; --series-7: #8d6e63; --series-8: #4fb3e8; --series-9: #c9a227;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --color-bg: #12151b; --color-panel: #1a1e26; --color-fg: #e7e9ee; --color-fg-muted: #9aa2b1;
+  --color-border-line: #2b313c; --color-ok: #4cc27f; --color-warn: #e1a046; --color-bad: #f0716b;
+  --cds-chart-muted: #4a5261; --cds-chart-status-critical: #f0716b; --cds-chart-grid: #232833; --cds-chart-axis: #3a4150;
+  --cds-chart-reference: #8b93a1; --cds-text-secondary: #9aa2b1;
+  --cds-surface-popover: #222733; --cds-border: #353c49; --cds-shadow-popover: 0 6px 24px rgba(0, 0, 0, .5);
+  --series-1: #6b9cf0; --series-2: #f0aa5c; --series-3: #4cc2b8; --series-4: #b48cf0; --series-5: #f08aa3;
+  --series-6: #9cbd55; --series-7: #b39488; --series-8: #7cc9f0; --series-9: #e0c050;
+  color-scheme: dark; } }
+html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); font-size: 14px; }
+#dash-root { max-width: 1440px; margin: 0 auto; padding-block: 24px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.dash-select { font: inherit; color: var(--color-fg); background-color: var(--color-bg); border: 1px solid var(--color-border-line);
+  border-radius: var(--cds-radius); padding: 6px 28px 6px 8px; min-width: 0; max-width: 260px; }
+.dash-skeleton { color: transparent !important; background: var(--color-border-line); border-radius: 4px; }
+.fx-inbar { fill: #fff; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="dash-shim.js"></script>
+</head>
+<body>
+<div id="dash-root">
+<style>
+.fx { display: flex; flex-direction: column; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+.fx-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--cds-gap-sm) var(--cds-gap-lg); }
+.fx-head h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; }
+.fx-asof { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.fx-lede { margin: 0; max-width: 72ch; font-size: var(--cds-font-size-body); line-height: 1.5; }
+.fx-lede b { font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
+.fx-filters { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: end; padding: var(--cds-pad-md); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); }
+.fx-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fx-field > span { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); letter-spacing: 0.02em; }
+.fx-field input[type=date], .fx-field input[type=search] { font: inherit; color: var(--color-fg); background-color: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 6px 8px; min-width: 0; }
+.fx-quick { display: flex; gap: 4px; flex-wrap: wrap; }
+.fx-btn { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.fx-btn:hover { border-color: var(--color-fg-muted); }
+.fx-btn:focus-visible, .fx-tab:focus-visible, tr.is-pickable:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.fx-range { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); align-self: center; }
+.fx-tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--color-border-line); scrollbar-width: thin; }
+.fx-tab { font: inherit; font-size: var(--cds-font-size-body); color: var(--color-fg-muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px; cursor: pointer; white-space: nowrap; }
+.fx-tab[aria-selected=true] { color: var(--color-fg); border-bottom-color: var(--color-fg); font-weight: var(--cds-font-weight-medium); }
+.fx-page { display: flex; flex-direction: column; gap: var(--cds-gap-lg); }
+.fx-page > h2, .fx-card h3 { margin: 0; }
+.fx-page > h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.fx-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); max-width: 80ch; line-height: 1.45; }
+.fx-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--cds-gap-sm); }
+.fx-kpi { display: flex; flex-direction: column; gap: 6px; padding: var(--cds-pad-md); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); min-width: 0; }
+.fx-kpi .fx-label { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); line-height: 1.3; }
+.fx-kpi .fx-value { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 1.9rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fx-kpi.is-alert .fx-value { color: var(--color-bad); }
+.fx-delta { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+.is-good { color: var(--color-ok); }
+.is-bad { color: var(--color-bad); }
+.fx-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--cds-gap-lg); }
+.fx-card { display: flex; flex-direction: column; gap: var(--cds-gap-sm); padding: var(--cds-pad-lg); background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); min-width: 0; }
+.fx-card h3 { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+.fx-card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--cds-gap-sm); }
+.fx-chart { position: relative; min-height: 200px; }
+.fx-chart svg { display: block; overflow: visible; }
+.fx-tick { fill: var(--cds-text-secondary); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.fx-cat { fill: var(--color-fg); }
+.fx-val { fill: var(--color-fg); }
+.fx-inbar { fill: #fff; font-size: 11px; font-weight: 600; pointer-events: none; }
+.fx-grid line { stroke: var(--cds-chart-grid); }
+.fx-guide { stroke: var(--cds-chart-reference); stroke-dasharray: 3 3; }
+.fx-donut-n { fill: var(--color-fg); font-family: var(--font-anthropic-serif); font-size: 1.6rem; }
+.fx-leg-name { fill: var(--color-fg); font-size: var(--cds-font-size-caption); }
+.fx-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); margin-bottom: 6px; }
+.fx-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.fx-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.fx-tip { position: absolute; z-index: 5; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: 8px 10px; font-size: var(--cds-font-size-caption); min-width: 140px; max-width: 280px; }
+.fx-tip div { display: flex; justify-content: space-between; gap: 12px; }
+.fx-tip span { color: var(--cds-text-secondary); }
+.fx-tip b { font-weight: var(--cds-font-weight-medium); font-variant-numeric: tabular-nums; }
+.fx-tip-h { font-weight: var(--cds-font-weight-medium); margin-bottom: 4px; }
+.fx-empty { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); padding: var(--cds-pad-md) 0; margin: 0; }
+.fx-tablewrap { overflow: auto; max-height: 460px; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); }
+.fx-table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.fx-table th { position: sticky; top: 0; background: var(--color-panel); text-align: left; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); padding: 8px 10px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.fx-table td { padding: 7px 10px; border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
+.fx-table tbody tr:last-child td { border-bottom: 0; }
+.fx-table .num { text-align: right; white-space: nowrap; }
+.fx-table .nowrap { white-space: nowrap; }
+.fx-table .wide { min-width: 220px; }
+.fx-table tr.is-pickable { cursor: pointer; }
+.fx-table tr.is-pickable:hover td { background: var(--color-bg); }
+.fx-table tr.is-picked td { background: var(--color-bg); font-weight: var(--cds-font-weight-medium); }
+.fx-cellbar { position: relative; display: block; min-width: 90px; height: 18px; }
+.fx-cellbar i { position: absolute; inset: 3px auto 3px 0; background: var(--cds-chart-muted); border-radius: 2px; }
+.fx-cellbar b { position: relative; font-weight: 400; padding-left: 4px; line-height: 18px; }
+.fx-count { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fx-stat-help { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--cds-gap-sm); }
+.fx-stat-help div { padding: var(--cds-pad-sm) var(--cds-pad-md); border-left: 2px solid var(--color-border-line); }
+.fx-stat-help b { display: block; font-weight: var(--cds-font-weight-medium); margin-bottom: 2px; }
+.fx-stat-help p { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.fx-status { font-family: var(--font-anthropic-serif); font-size: 1.6rem; }
+.fx-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--cds-gap-sm); }
+.fx-detail div { display: flex; flex-direction: column; gap: 2px; }
+.fx-detail span { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.fx-export { margin-left: auto; }
+.fx-card-head .fx-export ~ .fx-export { margin-left: 0; }
+.fx-export.is-busy { opacity: .6; }
+.fx-export.is-saved::after { content: " ✓"; }
+.fx-export.is-failed::after { content: " · not saved"; color: var(--color-bad); }
+#raw-export .fx-export { margin-left: 0; }
+.fx-card-head h3 { flex: 1 1 auto; }
+@media print { .fx-export, #raw-export { display: none; }  .fx-tabs, .fx-filters .fx-quick, .fx-btn { display: none; } .fx-page[hidden] { display: flex !important; break-before: page; } .fx-tablewrap { max-height: none; overflow: visible; } }
+</style>
+
+<div class="fx">
+  <header class="fx-head">
+    <h1 id="title">Fulfilment Dashboard</h1>
+    <span class="fx-asof">Data as of <b data-draw="kpi" data-source="ov_kpi" data-field="Data as of" data-row="0" data-fmt="dt">—</b> (Cairo time)</span>
+  </header>
+  <p class="fx-lede" id="summary">For the orders in view, <b data-draw="kpi" data-source="ov_kpi" data-field="Orders To Ship" data-row="0" data-fmt="int">—</b> need shipping, <b data-draw="kpi" data-source="ov_kpi" data-field="Fulfilled %" data-row="0" data-fmt="pct">—</b> are fulfilled, and <b data-draw="kpi" data-source="ov_kpi" data-field="Delivery Success %" data-row="0" data-fmt="pct">—</b> of closed deliveries reached the customer. <b data-draw="kpi" data-source="ov_kpi" data-field="Waiting At Brand 24h+" data-row="0" data-fmt="int">—</b> orders have waited at the brand for more than 24 hours.</p>
+
+  <div class="fx-filters" id="filters">
+    <label class="fx-field"><span>Brand</span><select class="dash-select" id="f-brand" data-draw="choices" data-source="filter_choices" data-param="brand" data-list="brands" data-all="All brands" aria-label="Brand"></select></label>
+    <label class="fx-field"><span>Courier</span><select class="dash-select" id="f-courier" data-draw="choices" data-source="filter_choices" data-param="courier" data-list="couriers" data-all="All couriers" aria-label="Courier"></select></label>
+    <label class="fx-field"><span>Payment</span><select class="dash-select" id="f-payment" data-draw="choices" data-source="filter_choices" data-param="payment" data-list="payments" data-all="All payment methods" aria-label="Payment"></select></label>
+    <label class="fx-field"><span>Orders from</span><input type="date" id="f-from" min="2020-01-01" max="2099-12-31"></label>
+    <label class="fx-field"><span>to</span><input type="date" id="f-to" min="2020-01-01" max="2099-12-31"></label>
+    <div class="fx-quick">
+      <button class="fx-btn" type="button" data-range="7">Last 7 days</button>
+      <button class="fx-btn" type="button" data-range="30">Last 30 days</button>
+      <button class="fx-btn" type="button" data-range="all">All dates</button>
+      <button class="fx-btn" type="button" id="f-reset">Clear filters</button>
+    </div>
+    <div class="fx-quick" id="raw-export"><span class="fx-range">Full data:</span><button class="fx-btn fx-export" type="button" data-export="orders" data-name="orders-filtered" data-filtered="1">Orders (filtered)</button><button class="fx-btn fx-export" type="button" data-export="parcels" data-name="parcels-filtered" data-filtered="1">Parcels (filtered)</button><button class="fx-btn fx-export" type="button" data-export="attempts" data-name="attempts-filtered" data-filtered="1">Attempts (filtered)</button></div>
+    <span class="fx-range" data-draw="daterange" data-source="filter_choices">—</span>
+  </div>
+
+  <nav class="fx-tabs" role="tablist" aria-label="Pages">
+    <button class="fx-tab" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="fx-tab" role="tab" data-tab="action-list" aria-selected="false">Action list</button>
+    <button class="fx-tab" role="tab" data-tab="performance" aria-selected="false">3PLs performance</button>
+    <button class="fx-tab" role="tab" data-tab="order-search" aria-selected="false">Order search</button>
+    <button class="fx-tab" role="tab" data-tab="deep-dive" aria-selected="false">3PL deep dive</button>
+    <button class="fx-tab" role="tab" data-tab="bottlenecks" aria-selected="false">Bottlenecks</button>
+    <button class="fx-tab" role="tab" data-tab="courier-by-zone" aria-selected="false">Courier by zone</button>
+    <button class="fx-tab" role="tab" data-tab="no-call" aria-selected="false">No-call failures</button>
+    <button class="fx-tab" role="tab" data-tab="data-health" aria-selected="false">Data health</button>
+  </nav>
+
+  <!-- ================= Overview ================= -->
+  <section class="fx-page" id="overview">
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="ov_kpi" data-name="overview-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis" id="ov-cards">
+      <div class="fx-kpi"><span class="fx-label">Orders to ship</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Orders To Ship" data-row="0" data-fmt="int">—</b><span class="fx-delta" data-draw="delta" data-source="ov_kpi" data-field="Orders To Ship change" data-row="0">—</span></div>
+      <div class="fx-kpi"><span class="fx-label">Fulfilled</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Fulfilled %" data-row="0" data-fmt="pct">—</b><span class="fx-delta" data-draw="delta" data-source="ov_kpi" data-field="Fulfilled % change" data-row="0">—</span></div>
+      <div class="fx-kpi"><span class="fx-label">Waiting at brand</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Waiting At Brand" data-row="0" data-fmt="int">—</b><span class="fx-delta">No label or fulfilment yet</span></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Waiting at brand 24h+</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Waiting At Brand 24h+" data-row="0" data-fmt="int">—</b><span class="fx-delta">Fridays not counted</span></div>
+      <div class="fx-kpi"><span class="fx-label">Waiting for courier pickup</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Waiting For Courier Pickup" data-row="0" data-fmt="int">—</b><span class="fx-delta">Label made, not picked up</span></div>
+      <div class="fx-kpi"><span class="fx-label">Median order → ready</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Median Order To Ready (h)" data-row="0" data-fmt="h">—</b><span class="fx-delta" data-draw="delta" data-source="ov_kpi" data-field="Median Order To Ready (h) change" data-row="0">—</span></div>
+      <div class="fx-kpi"><span class="fx-label">Delivery success</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Delivery Success %" data-row="0" data-fmt="pct">—</b><span class="fx-delta" data-draw="delta" data-source="ov_kpi" data-field="Delivery Success % change" data-row="0">—</span></div>
+      <div class="fx-kpi"><span class="fx-label">Median order → delivered (Bosta)</span><b class="fx-value" data-draw="kpi" data-source="ov_kpi" data-field="Median Order To Delivered (h)" data-row="0" data-fmt="h">—</b><span class="fx-delta" data-draw="delta" data-source="ov_kpi" data-field="Median Order To Delivered (h) change" data-row="0">—</span></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="ov-daily"><div class="fx-card-head"><h3>Orders placed per day, by where they are now</h3><button class="fx-btn fx-export" type="button" data-export="ov_daily_stage" data-name="ov-daily" aria-label="Export ov-daily as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="ov_daily_stage" data-h="280" data-label="Stacked columns of orders per day by current stage"></div></div>
+      <div class="fx-card" id="ov-hour"><div class="fx-card-head"><h3>Median hours to ready, by hour the order came in</h3><button class="fx-btn fx-export" type="button" data-export="ov_hour" data-name="ov-hour" aria-label="Export ov-hour as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="ov_hour" data-h="280" data-label="Columns of median hours to ready for each hour of the day"></div></div>
+      <div class="fx-card" id="ov-ready"><div class="fx-card-head"><h3>How fast orders became ready</h3><button class="fx-btn fx-export" type="button" data-export="ov_readyday" data-name="ov-ready" aria-label="Export ov-ready as CSV">Export CSV</button></div><p class="fx-note">Share of each day’s orders ready the same day, the next working day, or later. Fridays are not working days.</p><div class="fx-chart" data-draw="chart" data-source="ov_readyday" data-h="260" data-label="100% stacked columns of ready-day mix per order date"></div></div>
+      <div class="fx-card" id="ov-times"><div class="fx-card-head"><h3>Median hours to ready and to delivered, per order date</h3><button class="fx-btn fx-export" type="button" data-export="ov_times" data-name="ov-times" aria-label="Export ov-times as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="ov_times" data-h="260" data-label="Lines of median hours to ready and to delivered per day"></div></div>
+    </div>
+  </section>
+
+  <!-- ================= Action list ================= -->
+  <section class="fx-page" id="action-list" hidden>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="al_kpi" data-name="action-list-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Waiting at brand</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="Waiting At Brand" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Waiting at brand 24h+</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="Waiting At Brand 24h+" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Waiting for courier pickup</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="Waiting For Courier Pickup" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">With courier now</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="With Courier Now" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">With courier 10+ days</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="With Courier 10+ Days" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Average days with courier</span><b class="fx-value" data-draw="kpi" data-source="al_kpi" data-field="Avg Days With Courier" data-row="0" data-fmt="dec1">—</b></div>
+    </div>
+    <div class="fx-card" id="al-waiting">
+      <div class="fx-card-head"><h3>Orders waiting to move, longest wait first</h3><span class="fx-count" data-draw="rowcount" data-source="al_waiting" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="al_waiting" data-name="al-waiting" aria-label="Export al-waiting as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="al_waiting" data-row-key="OrderKey" data-limit="300" data-empty="No orders are waiting">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="Created" data-fmt="dt" class="nowrap">Created</th><th data-field="Stage" data-fmt="stage">Stage</th><th data-field="Hours Waiting" data-fmt="dec1" class="num">Hours waiting</th><th data-field="Courier">Courier</th><th data-field="AwbCreated" data-fmt="dt" class="nowrap">Label made</th><th data-field="TrackingNumbers">Tracking</th><th data-field="City">City</th><th data-field="Governorate">Governorate</th><th data-field="Total" data-fmt="int" class="num">Total (EGP)</th><th data-field="Payment">Payment</th><th data-field="FulfilledFrom">Fulfilled from</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="al-courier">
+      <div class="fx-card-head"><h3>Orders with the courier, oldest first</h3><span class="fx-count" data-draw="rowcount" data-source="al_courier" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="al_courier" data-name="al-courier" aria-label="Export al-courier as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="al_courier" data-row-key="OrderKey" data-limit="300" data-empty="No orders are with the courier">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="Courier">Courier</th><th data-field="TrackingNumbers">Tracking</th><th data-field="Governorate">Governorate</th><th data-field="PickedUp" data-fmt="dt" class="nowrap">Picked up</th><th data-field="Days With Courier" data-fmt="int" class="num">Days with courier</th><th data-field="Attempts" data-fmt="int" class="num">Attempts</th><th data-field="LastException" class="wide">Last problem</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= 3PLs performance ================= -->
+  <section class="fx-page" id="performance" hidden>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="pf_kpi" data-name="performance-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Delivered orders</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Delivered Orders" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Returned orders</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Returned Orders" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Delivery success</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Delivery Success %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Delivered on first attempt</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="First Attempt %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">On time (Bosta promise)</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="On Time %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Next-day delivery</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Next Day Delivery %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Median label → pickup (Bosta)</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Median Label To Pickup (h)" data-row="0" data-fmt="h">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Median pickup → delivered (Bosta)</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Median Pickup To Delivered (h)" data-row="0" data-fmt="h">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Median order → delivered (Bosta)</span><b class="fx-value" data-draw="kpi" data-source="pf_kpi" data-field="Median Order To Delivered (h)" data-row="0" data-fmt="h">—</b></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="pf-exceptions"><div class="fx-card-head"><h3>Why orders came back: last problem the courier logged</h3><button class="fx-btn fx-export" type="button" data-export="pf_exceptions" data-name="pf-exceptions" aria-label="Export pf-exceptions as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="pf_exceptions" data-label="Bars of returned orders by last courier problem"></div></div>
+      <div class="fx-card" id="pf-trend"><div class="fx-card-head"><h3>Delivery success and on-time rate, per order date</h3><button class="fx-btn fx-export" type="button" data-export="pf_trend" data-name="pf-trend" aria-label="Export pf-trend as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="pf_trend" data-h="260" data-label="Lines of delivery success and on-time rate per day"></div></div>
+    </div>
+    <div class="fx-card" id="pf-failed">
+      <div class="fx-card-head"><h3>Failed parcels to follow up with customers</h3><span class="fx-count" data-draw="rowcount" data-source="pf_failed" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="pf_failed" data-name="pf-failed" aria-label="Export pf-failed as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="pf_failed" data-row-key="Brand,Tracking" data-limit="300">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="Carrier">Carrier</th><th data-field="CourierName">Delivery agent</th><th data-field="Tracking">Tracking</th><th data-field="CustomerName">Customer</th><th data-field="CustomerPhone" class="nowrap">Phone</th><th data-field="LastException" class="wide">Last problem</th><th data-field="FailReasonGroup">Reason group</th><th data-field="Attempts" data-fmt="int" class="num">Attempts</th><th data-field="Calls" data-fmt="int" class="num">Calls</th><th data-field="CallCheck">Call check</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="pf-gov">
+        <div class="fx-card-head"><h3>Bosta results by governorate</h3><button class="fx-btn fx-export" type="button" data-export="pf_gov" data-name="pf-gov" aria-label="Export pf-gov as CSV">Export CSV</button></div>
+        <div class="fx-tablewrap"><table class="fx-table" data-source="pf_gov" data-row-key="Governorate">
+          <thead><tr><th data-field="Governorate">Governorate</th><th data-field="Orders Placed" data-fmt="int" class="num">Orders</th><th data-field="Delivery Success %" data-fmt="bar">Delivery success</th><th data-field="Median Pickup To Delivered (h)" data-fmt="dec1" class="num">Pickup → delivered (h)</th><th data-field="Median Order To Delivered (h)" data-fmt="dec1" class="num">Order → delivered (h)</th></tr></thead>
+          <tbody data-draw="rows"></tbody>
+        </table></div>
+      </div>
+      <div class="fx-card" id="pf-dday-mix"><div class="fx-card-head"><h3>Working days to delivery, by courier and brand</h3><button class="fx-btn fx-export" type="button" data-export="pf_dday_share" data-name="pf-dday-mix" aria-label="Export pf-dday-mix as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="pf_dday_share" data-label="100% stacked bars of delivery day by courier and brand"></div></div>
+    </div>
+    <div class="fx-card" id="pf-dday">
+      <div class="fx-card-head"><h3>Delivered orders by order date and working days to delivery</h3><button class="fx-btn fx-export" type="button" data-export="pf_dday" data-name="pf-dday" aria-label="Export pf-dday as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="pf_dday" data-row-key="OrderDate">
+        <thead><tr><th data-field="OrderDate" data-fmt="d">Order date</th><th data-field="Day 1" data-fmt="int" class="num">Day 1</th><th data-field="Day 2" data-fmt="int" class="num">Day 2</th><th data-field="More than 2 days" data-fmt="int" class="num">More than 2 days</th><th data-field="Total" data-fmt="int" class="num">Total</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= Order search ================= -->
+  <section class="fx-page" id="order-search" hidden>
+    <div class="fx-filters">
+      <label class="fx-field" style="flex:1 1 280px"><span>Order number or tracking number</span><input type="search" id="f-search" placeholder="e.g. 47158 or 6377…" autocomplete="off"></label>
+    </div>
+    <p class="fx-note">Search ignores the date, courier and payment filters, so you can find any order. Pick a row to see its timeline.</p>
+    <div class="fx-card" id="os-results">
+      <div class="fx-card-head"><h3>Matching orders</h3><span class="fx-count" data-draw="rowcount" data-source="os_results" data-limit="200">—</span><button class="fx-btn fx-export" type="button" data-export="os_results" data-name="os-results" aria-label="Export os-results as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="os_results" data-row-key="OrderKey" data-limit="200" data-pick="1" data-empty="Type an order or tracking number above">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="Created" data-fmt="dt" class="nowrap">Created</th><th data-field="Status">Status</th><th data-field="Stage" data-fmt="stage">Stage</th><th data-field="Courier">Courier</th><th data-field="TrackingNumbers">Tracking</th><th data-field="Payment">Payment</th><th data-field="Total" data-fmt="int" class="num">Total (EGP)</th><th data-field="City">City</th><th data-field="Governorate">Governorate</th><th data-field="DeliveryDay">Delivery day</th><th data-field="Attempts" data-fmt="int" class="num">Attempts</th><th data-field="LastException" class="wide">Last problem</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="os-detail">
+      <div class="fx-card-head"><h3>Selected order</h3><button class="fx-btn fx-export" type="button" data-export="os_timeline" data-name="order-timeline" aria-label="Export the order timeline as CSV">Export CSV</button></div>
+      <div class="fx-detail">
+        <div><span>Order</span><b data-draw="kpi" data-source="os_detail" data-field="Order" data-row="0">—</b></div>
+        <div><span>Brand</span><b data-draw="kpi" data-source="os_detail" data-field="Brand" data-row="0">—</b></div>
+        <div><span>Status</span><b data-draw="kpi" data-source="os_detail" data-field="Status" data-row="0">—</b></div>
+        <div><span>Stage</span><b data-draw="kpi" data-source="os_detail" data-field="Stage" data-row="0" data-fmt="stage">—</b></div>
+        <div><span>Courier</span><b data-draw="kpi" data-source="os_detail" data-field="Courier" data-row="0">—</b></div>
+        <div><span>Total</span><b data-draw="kpi" data-source="os_detail" data-field="Total" data-row="0" data-fmt="egp">—</b></div>
+        <div><span>Payment</span><b data-draw="kpi" data-source="os_detail" data-field="Payment" data-row="0">—</b></div>
+        <div><span>Governorate</span><b data-draw="kpi" data-source="os_detail" data-field="Governorate" data-row="0">—</b></div>
+      </div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="os_timeline" data-row-key="Key" data-empty="Pick an order in the results to see its timeline">
+        <thead><tr><th data-field="Step">Step</th><th data-field="When" data-fmt="dt" class="nowrap">When</th><th data-field="Parcel">Parcel</th><th data-field="Detail" class="wide">Detail</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= 3PL deep dive ================= -->
+  <section class="fx-page" id="deep-dive" hidden>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="dd_kpi" data-name="deep-dive-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Parcel success</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Parcel Success %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Avg attempts, delivered</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Avg Attempts (Delivered)" data-row="0" data-fmt="dec2">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Avg attempts, failed</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Avg Attempts (Failed)" data-row="0" data-fmt="dec2">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Avg calls, failed</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Avg Calls (Failed)" data-row="0" data-fmt="dec2">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Failed with no call</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Failed With No Call %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Fake attempts (Bosta flag)</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Fake Attempt %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Verified failures</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Verified Failures %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Rescheduled parcels</span><b class="fx-value" data-draw="kpi" data-source="dd_kpi" data-field="Rescheduled Parcels %" data-row="0" data-fmt="pct">—</b></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="dd-attempts"><div class="fx-card-head"><h3>What happened on each delivery attempt</h3><button class="fx-btn fx-export" type="button" data-export="dd_attempt_mix" data-name="dd-attempts" aria-label="Export dd-attempts as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="dd_attempt_mix" data-h="300" data-label="100% stacked columns of attempt results by attempt number"></div></div>
+      <div class="fx-card" id="dd-calls"><div class="fx-card-head"><h3>Result by how many times the courier called</h3><button class="fx-btn fx-export" type="button" data-export="dd_calls" data-name="dd-calls" aria-label="Export dd-calls as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="dd_calls" data-label="100% stacked bars of delivered and failed parcels by number of calls"></div>
+        <div class="fx-card-head"><h3 id="dd-confirm-h">Success rate by customer confirmation</h3><button class="fx-btn fx-export" type="button" data-export="dd_confirm" data-name="dd-confirm" aria-label="Export dd-confirm as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="dd_confirm" data-label="Bars of parcel success by confirmation status"></div></div>
+    </div>
+    <div class="fx-card" id="dd-stars">
+      <div class="fx-card-head"><h3>Results by delivery agent, busiest first</h3><span class="fx-count" data-draw="rowcount" data-source="dd_stars" data-limit="100">—</span><button class="fx-btn fx-export" type="button" data-export="dd_stars" data-name="dd-stars" aria-label="Export dd-stars as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="dd_stars" data-row-key="Carrier,CourierName" data-limit="100">
+        <thead><tr><th data-field="Carrier">Carrier</th><th data-field="CourierName">Delivery agent</th><th data-field="Parcels Delivered" data-fmt="int" class="num">Delivered</th><th data-field="Parcels Failed" data-fmt="int" class="num">Failed</th><th data-field="Parcel Success %" data-fmt="bar">Success</th><th data-field="Avg Attempts (Delivered)" data-fmt="dec2" class="num">Avg attempts (delivered)</th><th data-field="Avg Calls (Failed)" data-fmt="dec2" class="num">Avg calls (failed)</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="dd-outcomes">
+      <div class="fx-card-head"><h3>Failed attempts: the courier’s reason, by attempt number</h3><button class="fx-btn fx-export" type="button" data-export="dd_outcomes" data-name="dd-outcomes" aria-label="Export dd-outcomes as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="dd_outcomes" data-row-key="Outcome">
+        <thead><tr><th data-field="Outcome" class="wide">Reason</th><th data-field="Attempt 1" data-fmt="int" class="num">Attempt 1</th><th data-field="Attempt 2" data-fmt="int" class="num">Attempt 2</th><th data-field="Attempt 3" data-fmt="int" class="num">Attempt 3</th><th data-field="Attempt 4" data-fmt="int" class="num">Attempt 4</th><th data-field="Attempt 5+" data-fmt="int" class="num">Attempt 5+</th><th data-field="Total" data-fmt="int" class="num">Total</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= Bottlenecks ================= -->
+  <section class="fx-page" id="bottlenecks" hidden>
+    <div class="fx-filters">
+      <label class="fx-field"><span>Show hours as</span>
+        <select class="dash-select" id="f-stat" aria-label="Statistic"><option value="Median">Median</option><option value="P90">P90 (slow tail)</option><option value="Average">Average</option></select></label>
+    </div>
+    <div class="fx-stat-help">
+      <div><b>Median</b><p>The middle order: half were faster, half slower. The typical order.</p></div>
+      <div><b>P90</b><p>9 out of 10 orders were faster than this. The slow tail, the worst 10% of orders.</p></div>
+      <div><b>Average</b><p>Add all and divide by the count. One very late order pulls it up.</p></div>
+    </div>
+    <div class="fx-card" id="bn-waterfall"><div class="fx-card-head"><h3>Where the hours go, from order to doorstep (delivered orders)</h3><button class="fx-btn fx-export" type="button" data-export="bn_stages" data-name="bn-waterfall" aria-label="Export bn-waterfall as CSV">Export CSV</button></div><p class="fx-note">Each step adds its hours; the last bar is the whole journey. Fridays are not counted.</p><div class="fx-chart" data-draw="chart" data-source="bn_stages" data-h="300" data-label="Waterfall of hours per stage from order to delivery"></div></div>
+    <div class="fx-card" id="bn-courier">
+      <div class="fx-card-head"><h3>Hours per stage, by courier and brand</h3><button class="fx-btn fx-export" type="button" data-export="bn_courier" data-name="bn-courier" aria-label="Export bn-courier as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="bn_courier" data-row-key="Key">
+        <thead><tr><th data-field="Courier">Courier</th><th data-field="Brand">Brand</th><th data-field="1 Waiting at brand" data-fmt="dec1" class="num">Waiting at brand</th><th data-field="2 Label → pickup" data-fmt="dec1" class="num">Label → pickup</th><th data-field="3 Pickup → hub" data-fmt="dec1" class="num">Pickup → hub</th><th data-field="4 Hub → out for delivery" data-fmt="dec1" class="num">Hub → out for delivery</th><th data-field="5 Out → delivered" data-fmt="dec1" class="num">Out → delivered</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="bn-location">
+      <div class="fx-card-head"><h3>Brand-side hours by fulfilment location (10 busiest)</h3><button class="fx-btn fx-export" type="button" data-export="bn_location" data-name="bn-location" aria-label="Export bn-location as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="bn_location" data-row-key="FulfilledFrom">
+        <thead><tr><th data-field="FulfilledFrom">Fulfilled from</th><th data-field="Orders" data-fmt="int" class="num">Orders</th><th data-field="1 Waiting at brand" data-fmt="dec1" class="num">Waiting at brand (h)</th><th data-field="2 Label → pickup" data-fmt="dec1" class="num">Label → pickup (h)</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- ================= Courier by zone ================= -->
+  <section class="fx-page" id="courier-by-zone" hidden>
+    <p class="fx-note">Score = 50% delivery success + 25% next-day delivery + 25% first-attempt delivery. A courier is recommended only when both have at least 20 closed orders in the governorate. “Returns avoided” assumes the governorate’s volume moves to the better courier.</p>
+    <div class="fx-card" id="cz-table">
+      <div class="fx-card-head"><h3>Best courier for each governorate</h3><button class="fx-btn fx-export" type="button" data-export="cz_table" data-name="cz-table" aria-label="Export cz-table as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="cz_table" data-row-key="Governorate">
+        <thead><tr><th data-field="Governorate">Governorate</th><th data-field="Bosta Closed" data-fmt="int" class="num">Bosta closed</th><th data-field="Mylerz Closed" data-fmt="int" class="num">Mylerz closed</th><th data-field="Bosta Success (Zone)" data-fmt="pct" class="num">Bosta success</th><th data-field="Mylerz Success (Zone)" data-fmt="pct" class="num">Mylerz success</th><th data-field="Bosta Score" data-fmt="pct" class="num">Bosta score</th><th data-field="Mylerz Score" data-fmt="pct" class="num">Mylerz score</th><th data-field="Recommended Courier">Recommended</th><th data-field="Success Gain (pts)" data-fmt="dec1" class="num">Gain (pts)</th><th data-field="Returns Avoided / Month" data-fmt="int" class="num">Returns avoided / month</th><th data-field="Recommendation" class="wide">Recommendation</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="cz-bars"><div class="fx-card-head"><h3>Delivery success by governorate and courier (20+ closed orders)</h3><button class="fx-btn fx-export" type="button" data-export="cz_bars" data-name="cz-bars" aria-label="Export cz-bars as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="cz_bars" data-label="Grouped bars of delivery success for Bosta and Mylerz by governorate"></div></div>
+  </section>
+
+  <!-- ================= No-call failures ================= -->
+  <section class="fx-page" id="no-call" hidden>
+    <p class="fx-note">Failed Bosta parcels where the courier made no call. “Suspicious” means no call, no WhatsApp or bot verification, and not refused at the door.</p>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="nc_kpi" data-name="no-call-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Failed with no call</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Failed With No Call %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Suspicious no-call share</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Suspicious No-Call %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi is-alert"><span class="fx-label">Suspicious no-call failures</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Suspicious No-Call Failures" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">COD lost on suspicious failures</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="COD Lost (Suspicious)" data-row="0" data-fmt="egp">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Delivered with no call</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Delivered With No Call %" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Success when not called</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Success When Not Called" data-row="0" data-fmt="pct">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Success when called</span><b class="fx-value" data-draw="kpi" data-source="nc_kpi" data-field="Success When Called" data-row="0" data-fmt="pct">—</b></div>
+    </div>
+    <div class="fx-grid2">
+      <div class="fx-card" id="nc-donut"><div class="fx-card-head"><h3>Failed parcels by call check</h3><button class="fx-btn fx-export" type="button" data-export="nc_callcheck" data-name="nc-donut" aria-label="Export nc-donut as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="nc_callcheck" data-h="240" data-label="Donut of failed parcels by call check"></div></div>
+      <div class="fx-card" id="nc-reasons"><div class="fx-card-head"><h3>Call check within each failure reason</h3><button class="fx-btn fx-export" type="button" data-export="nc_reasons" data-name="nc-reasons" aria-label="Export nc-reasons as CSV">Export CSV</button></div><div class="fx-chart" data-draw="chart" data-source="nc_reasons" data-label="100% stacked bars of call check by failure reason"></div></div>
+    </div>
+  </section>
+
+  <!-- ================= Data health ================= -->
+  <section class="fx-page" id="data-health" hidden>
+    <p class="fx-note">This page checks the data itself and ignores the filters above. Hours are counted to now.</p>
+    <div class="fx-card-head"><span class="fx-range">Headline figures</span><button class="fx-btn fx-export" type="button" data-export="dh_kpi" data-name="data-health-figures" aria-label="Export headline figures as CSV">Export CSV</button></div>
+    <div class="fx-kpis">
+      <div class="fx-kpi"><span class="fx-label">Data health</span><b class="fx-status" data-draw="status" data-source="dh_kpi" data-field="Data Health Status" data-row="0">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Parcels not matched to an order</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Unmatched Parcels" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Orders with data issues</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Orders With Data Issues" data-row="0" data-fmt="int">—</b></div>
+      <div class="fx-kpi"><span class="fx-label">Attempts the page could not read</span><b class="fx-value" data-draw="kpi" data-source="dh_kpi" data-field="Unparsed Attempts" data-row="0" data-fmt="int">—</b></div>
+    </div>
+    <div class="fx-card" id="dh-brands">
+      <div class="fx-card-head"><h3>Shopify orders by brand</h3><button class="fx-btn fx-export" type="button" data-export="dh_brands" data-name="dh-brands" aria-label="Export dh-brands as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="dh_brands" data-row-key="Brand">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Hours Since Last Order" data-fmt="int" class="num">Hours since last order</th><th data-field="Shopify Coverage Days" data-fmt="int" class="num">Days covered</th><th data-field="Orders Yesterday" data-fmt="int" class="num">Orders yesterday</th><th data-field="Avg Orders / Day (7d)" data-fmt="dec1" class="num">Avg / day (7 days)</th><th data-field="Volume vs Normal %" data-fmt="pct0" class="num">Yesterday vs normal</th><th data-field="Shipped Not Found At Courier" data-fmt="int" class="num">Shipped, not at courier</th><th data-field="Mylerz Not Found" data-fmt="int" class="num">Mylerz not found</th><th data-field="Courier Match %" data-fmt="pct" class="num">Courier match</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="dh-parcels">
+      <div class="fx-card-head"><h3>Courier parcels by brand</h3><button class="fx-btn fx-export" type="button" data-export="dh_parcels" data-name="dh-parcels" aria-label="Export dh-parcels as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="dh_parcels" data-row-key="Key">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Carrier">Carrier</th><th data-field="Parcels Loaded" data-fmt="int" class="num">Parcels loaded</th><th data-field="Hours Since Last Parcel" data-fmt="int" class="num">Hours since last parcel</th><th data-field="Courier Coverage Days" data-fmt="int" class="num">Days covered</th><th data-field="Parcels Matched %" data-fmt="pct" class="num">Matched to an order</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+    <div class="fx-card" id="dh-issues">
+      <div class="fx-card-head"><h3>Orders with data issues</h3><span class="fx-count" data-draw="rowcount" data-source="dh_issues" data-limit="300">—</span><button class="fx-btn fx-export" type="button" data-export="dh_issues" data-name="dh-issues" aria-label="Export dh-issues as CSV">Export CSV</button></div>
+      <div class="fx-tablewrap"><table class="fx-table" data-source="dh_issues" data-row-key="OrderKey" data-limit="300" data-empty="No data issues">
+        <thead><tr><th data-field="Brand">Brand</th><th data-field="Order">Order</th><th data-field="DataIssue">Issue</th><th data-field="Status">Status</th><th data-field="Courier">Courier</th><th data-field="TrackingNumbers">Tracking</th><th data-field="Created" data-fmt="dt" class="nowrap">Created</th><th data-field="AwbCreated" data-fmt="dt" class="nowrap">Label made</th><th data-field="PickedUp" data-fmt="dt" class="nowrap">Picked up</th><th data-field="Delivered" data-fmt="dt" class="nowrap">Delivered</th></tr></thead>
+        <tbody data-draw="rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+</div>
+</div>
+<script src="core.js"></script>
+<script src="draw.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
