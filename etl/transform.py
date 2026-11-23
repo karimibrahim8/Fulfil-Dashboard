@@ -516,8 +516,9 @@ RETURN_COLS = ["Brand", "ReturnId", "ReturnNumber", "OrderNumber", "OrderKey", "
                "RefundMethod", "NetBalance", "IsExchange", "OutgoingSkus", "OutgoingSizes", "ItemSku", "ItemProduct",
                "ItemProductType", "ItemSize", "ItemQty", "ItemValue", "ItemReason", "ItemNote", "ReturnNotes",
                "CustomerName", "CustomerPhone", "HoursToApprove", "SizeIssue", "ReturnType", "BostaReturnTracking",
-               "BostaReturnStatus", "BostaPickedUp", "OrderTotal", "OrderPayment", "ApiStatus"]
-# Left out on purpose: CustomerEmail, RefundInfo and ProofOfRefund (bank / wallet details), never shown on the page.
+               "BostaReturnStatus", "BostaPickedUp", "OrderTotal", "OrderPayment", "RefundProvider",
+               "RefundAccountNumber", "RefundAccountName", "ProofOfRefund", "ApiStatus"]
+# Refund account details are included at the owner's request (2026-11-23). CustomerEmail is still left out.
 
 
 # ---------------- JSON export (columnar, compact) ----------------

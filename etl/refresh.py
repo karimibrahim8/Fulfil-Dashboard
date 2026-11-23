@@ -440,7 +440,8 @@ RETURN_FIELDS = ["Brand", "ReturnId", "ReturnNumber", "OrderNumber", "OrderKey",
                  "ApprovedAt", "ReceivedAt", "RejectedAt", "ClosedAt", "UpdatedAt", "RefundMethod", "CustomerName",
                  "CustomerPhone", "ReturnNotes", "NetBalance", "City", "Province", "IsExchange", "OutgoingItems",
                  "OutgoingSkus", "OutgoingSizes", "ItemSku", "ItemProduct", "ItemProductType", "ItemSize", "ItemQty",
-                 "ItemValue", "ItemOriginalValue", "ItemReason", "ItemNote", "ApiStatus"]
+                 "ItemValue", "ItemOriginalValue", "ItemReason", "ItemNote", "RefundProvider", "RefundAccountNumber",
+                 "RefundAccountName", "ProofOfRefund", "ApiStatus"]
 
 
 def estebdal_returns(env, cutoff):
@@ -487,8 +488,16 @@ def estebdal_returns(env, cutoff):
     def text_list(v):
         return ", ".join("" if x is None else str(x) for x in (v or []))
 
+    def first_of(rec, names):
+        for n in names:
+            v = G(rec, n)
+            if v is not None:
+                return str(v)
+        return None
+
     rows = []
     for r in items:
+        ben = G(r, "monetaryDetails", "beneficiaryDetails") or r.get("beneficiaryDetails")
         dt = iso_to_cairo(r.get("date"))
         if dt is None or dt < cutoff:
             continue
@@ -505,6 +514,10 @@ def estebdal_returns(env, cutoff):
             NetBalance=G(r, "monetaryDetails", "resolvedNetBalance"), City=G(r, "customerInfo", "city"),
             Province=G(r, "customerInfo", "province"), IsExchange=len(out) > 0, OutgoingItems=len(out),
             OutgoingSkus=text_list([x.get("sku") for x in out]), OutgoingSizes=text_list([size_of(x) for x in out]),
+            RefundProvider=first_of(ben, ["provider", "bankName", "bank", "walletProvider"]),
+            RefundAccountNumber=first_of(ben, ["accountNumber", "iban", "walletNumber", "phone", "number"]),
+            RefundAccountName=first_of(ben, ["fullName", "accountHolderName", "accountName", "name"]),
+            ProofOfRefund=G(r, "monetaryDetails", "proofOfRefundUrl"),
             ApiStatus="OK")
         its = r.get("refundedItems") or [None]
         for it in its:

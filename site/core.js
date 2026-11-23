@@ -633,7 +633,8 @@ dash.calc('rt_all', {
       RefundMethod: r.RefundMethod, OrderTotal: r.OrderTotal, ItemProduct: r.ItemProduct, ItemSize: r.ItemSize, ItemValue: r.ItemValue, ItemReason: r.ItemReason,
       OutgoingSkus: r.OutgoingSkus, OutgoingSizes: r.OutgoingSizes, NetBalance: r.NetBalance, BostaReturnTracking: r.BostaReturnTracking,
       BostaReturnStatus: r.BostaReturnStatus, BostaPickedUp: r.BostaPickedUp, CustomerName: r.CustomerName, CustomerPhone: r.CustomerPhone,
-      ItemNote: r.ItemNote, ReturnNotes: r.ReturnNotes })),
+      ItemNote: r.ItemNote, ReturnNotes: r.ReturnNotes, ProofOfRefund: r.ProofOfRefund, RefundProvider: r.RefundProvider,
+      RefundAccountNumber: r.RefundAccountNumber, RefundAccountName: r.RefundAccountName })),
 });
 dash.calc('dh_estebdal', {
   inputs: ['returns'], title: 'E-stebdal connection', description: 'Whether the last refresh could read returns from E-stebdal.',
