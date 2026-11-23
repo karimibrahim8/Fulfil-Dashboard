@@ -20,7 +20,9 @@ sys.path.insert(0, HERE)
 import transform as T  # noqa: E402
 
 API_VERSION = "2026-10"
-STORES = {"DALYDRESS": "dalydressegypt.myshopify.com", "OR": "or-cc.myshopify.com", "OzoneEgypt": "ozoneegypt.myshopify.com"}
+STORES = {"DALYDRESS": "dalydressegypt.myshopify.com", "OR": "or-cc.myshopify.com", "OzoneEgypt": "ozoneegypt.myshopify.com",
+          "Daniel Hechter": "hechter-store.myshopify.com"}
+OPTIONAL_BRANDS = {"Daniel Hechter"}  # skipped (with a note) when their keys are not set yet
 
 
 def load_env(path):
@@ -138,9 +140,14 @@ def get_orders(env, since):
          "fulfillments(first:10){createdAt displayStatus location{name} trackingInfo(first:5){company number}}}}}")
     creds = {"DALYDRESS": ("SHOPIFY_DALYDRESS_CLIENT_ID", "SHOPIFY_DALYDRESS_CLIENT_SECRET"),
              "OR": ("SHOPIFY_OR_CLIENT_ID", "SHOPIFY_OR_CLIENT_SECRET"),
-             "OzoneEgypt": ("SHOPIFY_OZ_CLIENT_ID", "SHOPIFY_OZ_CLIENT_SECRET")}
+             "OzoneEgypt": ("SHOPIFY_OZ_CLIENT_ID", "SHOPIFY_OZ_CLIENT_SECRET"),
+             "Daniel Hechter": ("SHOPIFY_DH_CLIENT_ID", "SHOPIFY_DH_CLIENT_SECRET")}
     rows = []
     for brand, host in STORES.items():
+        cid, sec = env.get(creds[brand][0], ""), env.get(creds[brand][1], "")
+        if brand in OPTIONAL_BRANDS and not (cid and sec):
+            print(f"  Shopify {brand}: skipped (no keys set)")
+            continue
         cid, sec = env[creds[brand][0]], env[creds[brand][1]]
         for o in shopify_query(host, cid, sec, q):
             f = sorted(o.get("fulfillments") or [], key=lambda x: x.get("createdAt") or "")
@@ -311,6 +318,77 @@ def mylerz(env, since, cutoff):
         except ValueError:
             return None
 
+    # ---- call details for up to 300 open parcels active in the last 21 days ----
+    def mz_dt(t):
+        try:
+            return None if t is None else datetime.fromisoformat(str(t)).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    call_since = datetime.combine(datetime.now(timezone.utc).date() - timedelta(days=21), datetime.min.time())
+    call_bcs = []
+    for p in packages:
+        log = p.get("TrackLog") or []
+        times = [t for t in (mz_dt(x.get("ChangedDate")) for x in log) if t is not None]
+        if not any(code(x) == "DEL" for x in log) and times and max(times) >= call_since and p.get("Barcode") is not None:
+            if str(p["Barcode"]) not in call_bcs:
+                call_bcs.append(str(p["Barcode"]))
+    call_bcs = call_bcs[:300]
+
+    def secs_of(d):
+        if d is None:
+            return None
+        parts = []
+        for x in str(d).split(":"):
+            try:
+                parts.append(float(x))
+            except ValueError:
+                parts.append(0)
+        return parts[0] * 60 + parts[1] if len(parts) == 2 else parts[0] * 3600 + parts[1] * 60 + parts[2] if len(parts) == 3 else None
+
+    def call_summary(v):
+        if v is None:
+            return None
+        log = sorted(v.get("PackageStatusLog") or [], key=lambda x: mz_dt(x.get("ChangedDate")) or datetime.min)
+        calls = [c for x in log for c in (x.get("CallList") or [])]
+        sms = [c for x in log for c in (x.get("smsList") or [])]
+        ct = lambda c: mz_dt(c.get("time"))  # noqa: E731
+        ans = lambda c: c.get("CallStatusId") == 1  # noqa: E731
+        st = lambda x: str(x.get("StatusEnName") or "").lower()  # noqa: E731
+        fails = [x for x in log if any(k in st(x) for k in ("rejected", "rescheduled", "undeliver"))]
+        info = []
+        for f in fails:
+            tf = mz_dt(f.get("ChangedDate"))
+            if tf is None:
+                continue
+            starts = [x for x in log if "received by myler" in st(x) and (mz_dt(x.get("ChangedDate")) or datetime.max) <= tf]
+            t0 = tf - timedelta(days=1) if not starts else mz_dt(starts[-1].get("ChangedDate"))
+            w = [c for c in calls if ct(c) is not None and t0 <= ct(c) <= tf + timedelta(minutes=10)]
+            last = max((ct(c) for c in w), default=None)
+            any_ans = any(ans(c) for c in w)
+            info.append(dict(no_call=not w, fast=bool(w) and not any_ans and last is not None and (tf - last).total_seconds() / 60 <= 3,
+                             answered=any_ans))
+        secs = [s for s in (secs_of(c.get("Duration")) for c in calls) if s is not None]
+        timed = sorted((c for c in calls if ct(c) is not None), key=ct)
+        return dict(Calls=len(calls), SMS=len(sms), AnsweredCalls=sum(1 for c in calls if ans(c)),
+                    ZeroSecCalls=sum(1 for c in calls if secs_of(c.get("Duration")) == 0),
+                    CallSeconds=int(sum(secs)) if secs else None, LastCallTime=max((ct(c) for c in calls if ct(c)), default=None),
+                    NoCallFailures=sum(1 for i in info if i["no_call"]), FastFailAfterCall=sum(1 for i in info if i["fast"]),
+                    AnsweredThenFailed=sum(1 for i in info if i["answered"]),
+                    LastCaller=timed[-1].get("MemberName") if timed else None,
+                    CustomerRating=G(v, "PackageTrackingShipmentDetails", "CustomerPackageRatingOption"),
+                    RatingNote=G(v, "PackageTrackingShipmentDetails", "CustomerPackageRatingNote"))
+
+    call_info = {}
+    for bc in call_bcs:
+        try:
+            r = requests.get("https://integration.mylerz.net/api/packages/GetPackageTrackingDetailsByBarCode",
+                             params={"barcode": bc}, headers=hdr, timeout=60)
+            call_info[bc] = call_summary(G(r.json(), "Value")) if r.ok else None
+        except (requests.RequestException, ValueError):
+            call_info[bc] = None
+    print(f"  Mylerz call details: {sum(1 for v in call_info.values() if v)} of {len(call_bcs)} parcels")
+
     out = []
     for p in packages:
         log = sorted(p.get("TrackLog") or [], key=lambda x: str(x.get("ChangedDate")))
@@ -331,6 +409,8 @@ def mylerz(env, since, cutoff):
                 nxt = next((y for y in log[i + 1:] if code(y) in ("DEL", "RESC", "UNDELIVERD")), None)
                 items.append(f"{fmt(at(x))}~{'Out for delivery' if nxt is None else clean(name(nxt))}~0~0~delivery")
         d = details.get(bc)
+        cs = call_info.get(bc) or {}
+        last_call = cs.get("LastCallTime")
         out.append(dict(
             Brand="DALYDRESS", Tracking=bc, Type="Return to Origin" if is_ret else "Send", TypeBefore="SEND" if is_ret else None,
             StateCode=None, State=name(log[-1]) if log else None, Order=order, OrderKey=None if order is None else "DALYDRESS|" + order,
@@ -339,9 +419,14 @@ def mylerz(env, since, cutoff):
             PickedUp=picked if picked is not None else first_of({"RECORGHUB"}), ReceivedAtHub=first_of({"RECORGHUB"}),
             OutForDelivery=last_of({"OUT"}), Delivered=delivered, ReturnedToBusiness=at(back[-1]) if back else None,
             Cancelled=at(failed[0]) if is_ret else None, Terminated=None, Attempts=sum(1 for x in log if code(x) == "OUT"),
-            LastException=name(exc[-1]) if exc else None, PromisedBy=None, MissedPromise=None, Calls=None, SMS=None,
-            LastCallTime=None, ConfirmStatus=None, ConfirmSource=None, WARescheduled=False, WACancelled=False,
-            CourierName=p.get("MylerName"), FirstHub=p.get("OriginHub"), E2EMissed=None, IsDelayed=None, FakeAttempts=None,
+            LastException=name(exc[-1]) if exc else None, PromisedBy=None, MissedPromise=None, Calls=cs.get("Calls"),
+            SMS=cs.get("SMS"), LastCallTime=None if last_call is None else mz_time(last_call.strftime("%Y-%m-%dT%H:%M:%S")),
+            AnsweredCalls=cs.get("AnsweredCalls"), ZeroSecCalls=cs.get("ZeroSecCalls"), CallSeconds=cs.get("CallSeconds"),
+            NoCallFailures=cs.get("NoCallFailures"), FastFailAfterCall=cs.get("FastFailAfterCall"),
+            AnsweredThenFailed=cs.get("AnsweredThenFailed"), CustomerRating=cs.get("CustomerRating"), RatingNote=cs.get("RatingNote"),
+            ConfirmStatus=None, ConfirmSource=None, WARescheduled=False, WACancelled=False,
+            CourierName=p.get("MylerName") if p.get("MylerName") is not None else cs.get("LastCaller"),
+            FirstHub=p.get("OriginHub"), E2EMissed=None, IsDelayed=None, FakeAttempts=None,
             Reschedules=sum(1 for x in log if code(x) == "RESC"), AttemptLog="|".join(items), ReceiverName=None,
             CustomerName=None if d is None else d.get("CustomerName"), CustomerPhone=None if d is None else d.get("MobileNo"),
             CustomerPhone2=None, PickupLine=None, PickupDistrict=None, PickupZone=p.get("OriginHub"), PickupCity=None,
@@ -446,7 +531,11 @@ def main():
 
     orders = get_orders(env, since)
     parcels = []
-    for brand, key in (("DALYDRESS", "BOSTA_DALYDRESS_API_KEY"), ("OR", "BOSTA_OR_API_KEY"), ("OzoneEgypt", "BOSTA_OZ_API_KEY")):
+    for brand, key in (("DALYDRESS", "BOSTA_DALYDRESS_API_KEY"), ("OR", "BOSTA_OR_API_KEY"), ("OzoneEgypt", "BOSTA_OZ_API_KEY"),
+                       ("Daniel Hechter", "BOSTA_DH_API_KEY")):
+        if brand in OPTIONAL_BRANDS and not env.get(key):
+            print(f"  Bosta {brand}: skipped (no key set)")
+            continue
         parcels += bosta_brand(env[key], brand, cutoff)
     parcels += mylerz(env, since, cutoff)
     seen, kept = set(), []

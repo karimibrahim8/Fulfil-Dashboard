@@ -146,6 +146,68 @@ def build(orders: pd.DataFrame, bosta: pd.DataFrame, now: datetime):
 
     bosta["MatchIssue"] = bosta.apply(match_issue, axis=1)
 
+    # ---- courier flags (what looks wrong with how the courier handled the parcel) ----
+    def num0(v):
+        return 0 if _blank(v) else v
+
+    def hours_since(t):
+        return None if _blank(t) else (now - t).total_seconds() / 3600
+
+    def courier_flags(r):
+        if r.get("IsTransfer") is True:
+            return None
+        is_bosta = r["Carrier"] == "Bosta"
+        confirm = "" if _blank(r.get("ConfirmStatus")) else str(r.get("ConfirmStatus")).lower()
+        cust_cancelled = r.get("WACancelled") is True or confirm == "cancelled"
+        is_open = _blank(r["Delivered"]) and _blank(r["ReturnedToBusiness"]) and _blank(r["Cancelled"])
+        att, calls, fake, resch = num0(r["Attempts"]), num0(r["Calls"]), num0(r.get("FakeAttempts")), num0(r.get("Reschedules"))
+        no_call, fast, zero = num0(r.get("NoCallFailures")), num0(r.get("FastFailAfterCall")), num0(r.get("ZeroSecCalls"))
+        f = []
+        if is_bosta and fake > 0:
+            f.append("Fake attempt (Bosta)")
+        if is_bosta and att > 0 and _blank(r["Delivered"]) and confirm == "confirmed":
+            f.append("Failed after customer confirmed")
+        if is_bosta and not cust_cancelled and att > 0 and calls == 0 and _blank(r["Delivered"]):
+            f.append("Attempt with no call")
+        if is_bosta and not cust_cancelled and att >= 2 and 0 < calls < att:
+            f.append("Fewer calls than attempts")
+        if not is_bosta and no_call > 0:
+            f.append(f"Failed with no call ({int(no_call)}x)")
+        if not is_bosta and fast > 0:
+            f.append("Marked failed within 3 min of unanswered call")
+        if not is_bosta and calls > 0 and zero == calls:
+            f.append("Only 0-second calls")
+        h = hours_since(r["OutForDelivery"])
+        if is_open and h is not None and att == 0 and h > 24:
+            f.append("Out for delivery 24h+, no attempt")
+        h = hours_since(r["ReceivedAtHub"])
+        if is_open and h is not None and _blank(r["OutForDelivery"]) and h > 48:
+            f.append("At hub 48h+")
+        h = hours_since(r["PickedUp"])
+        if is_open and h is not None and _blank(r["ReceivedAtHub"]) and h > 24:
+            f.append("Picked up, not at hub 24h+")
+        if is_bosta and not cust_cancelled and r.get("MissedPromise") is True and r.get("WARescheduled") is not True:
+            f.append("Missed promised date")
+        if resch >= 2:
+            f.append(f"Rescheduled {int(resch)} times")
+        return " | ".join(f) if f else None
+
+    for c in ["AnsweredCalls", "ZeroSecCalls", "CallSeconds", "NoCallFailures", "FastFailAfterCall", "AnsweredThenFailed"]:
+        if c not in bosta.columns:
+            bosta[c] = None
+    bosta["CourierFlags"] = bosta.apply(courier_flags, axis=1)
+
+    def courier_risk(fl):
+        if _blank(fl) or fl == "":
+            return None
+        if any(_contains(fl, k) for k in ("Fake attempt", "after customer confirmed", "no attempt", "within 3 min", "0-second")):
+            return "High"
+        if any(_contains(fl, k) for k in ("no call", "Fewer calls", "hub")):
+            return "Medium"
+        return "Low"
+
+    bosta["CourierRisk"] = bosta["CourierFlags"].map(courier_risk)
+
     # ---------------- Orders calculated columns ----------------
     fwd = bosta[(bosta["IsTransfer"] != True) & bosta["Type"].isin(["Send", "Return to Origin"]) & bosta["OrderKey"].notna()]
     groups = {k: g for k, g in fwd.groupby("OrderKey")}
@@ -253,6 +315,100 @@ def build(orders: pd.DataFrame, bosta: pd.DataFrame, now: datetime):
         else:
             di = None
         r["DataIssue"] = di
+
+        # ---- courier accountability: the latest picked-up forward parcel of the order ----
+        if p:
+            keyf = lambda x: (not _blank(x["PickedUp"]), x["Created"] or datetime.min)  # noqa: E731
+            top = max(keyf(x) for x in p)
+            tp = [x for x in p if keyf(x) == top]
+        else:
+            tp = []
+
+        def mx(vals):
+            vals = [v for v in vals if not _blank(v)]
+            return max(vals) if vals else None
+
+        r["CourierIssues"] = mx(x["CourierFlags"] for x in tp)
+        r["CourierRiskLevel"] = mx(x["CourierRisk"] for x in tp)
+        r["CourierAgent"] = mx(x["CourierName"] for x in tp)
+        r["CourierCallsVsAttempts"] = mx(f"{int(x['Calls']) if not _blank(x['Calls']) else 0} calls / "
+                                         f"{int(x['Attempts']) if not _blank(x['Attempts']) else 0} attempts" for x in tp)
+        r["CourierLastReason"] = mx(x["LastException"] for x in tp)
+        r["CourierAnswered"] = mx(x.get("AnsweredCalls") for x in tp)
+        r["CourierTalkSeconds"] = mx(x.get("CallSeconds") for x in tp)
+        r["CourierLastCall"] = mx(x.get("LastCallTime") for x in tp)
+        r["CourierCalls"] = mx(x["Calls"] for x in tp)
+        reason = "" if _blank(r["CourierLastReason"]) else str(r["CourierLastReason"]).lower()
+        has = lambda *ks: any(k in reason for k in ks)  # noqa: E731
+        if reason == "":
+            g = "No reason recorded"
+        elif has("product issue"):
+            g = "Product issue"
+        elif has("duplicate"):
+            g = "Duplicate order"
+        elif has("wrong phone", "wrong mobile", "address not clear", "wrong address", "changed the address"):
+            g = "Wrong phone/address"
+        elif has("via whatsapp"):
+            g = "Cancelled on WhatsApp"
+        elif has("refus", "reject", "open"):
+            g = "Refused / wanted to open"
+        elif has("postpon", "reschedul"):
+            g = "Postponed"
+        elif has("unreachable", "no answer", "not at home", "not in the address"):
+            g = "Not reachable"
+        else:
+            g = "Other"
+        r["CourierReasonGroup"] = g
+        iss = r["CourierIssues"] or ""
+        ci = lambda k: k.lower() in iss.lower()  # noqa: E731
+        c, a_ = num0(r["CourierCalls"]), num0(r["CourierAnswered"])
+        secs = num0(r["CourierTalkSeconds"])
+        st3, st5 = stage == "3 With courier", stage == "5 Returned / failed"
+        barely = ci("0-second") or (courier == "Mylerz" and secs < 5 * c)
+        if ci("Fake attempt"):
+            resp, why = "Courier", "Bosta's own system flagged the attempt as fake."
+        elif st3 and ci("no attempt"):
+            resp, why = "Courier", "Out for delivery over 24 hours with no visit recorded."
+        elif st3 and ci("hub"):
+            resp, why = "Courier", "Parcel stuck inside the courier's network (hub delay)."
+        elif g == "Product issue":
+            resp, why = "Brand (product)", "Customer refused because of a problem with the product."
+        elif g == "Duplicate order":
+            resp, why = "Brand (order)", "Duplicate order; one copy came back."
+        elif g == "Wrong phone/address":
+            resp, why = "Customer data", "Customer's phone number or address is wrong or unclear."
+        elif g == "Cancelled on WhatsApp":
+            resp, why = "Customer", "Customer cancelled on WhatsApp before delivery."
+        elif g == "Refused / wanted to open":
+            resp = "Customer"
+            why = ("Customer wanted to open the parcel before paying, then refused." if "open" in reason
+                   else "Customer refused the parcel at the door.")
+        elif g == "Postponed":
+            resp = "Customer" if (c > 0 or courier == "Bosta") else "Check"
+            why = "Customer asked to postpone" + (", several times." if ci("Rescheduled") else ".")
+        elif g == "Not reachable":
+            if a_ > 0:
+                resp, why = "Check", f"Courier says unreachable, but the customer answered {int(a_)} call(s)."
+            elif c == 0:
+                resp, why = "Courier", "Courier says unreachable but logged no calls."
+            elif barely:
+                resp, why = "Courier", f"Courier's calls barely rang ({int(secs)} sec in total)."
+            elif c <= 2 and ci("within 3 min"):
+                resp, why = "Courier", "Marked failed minutes after a single unanswered call."
+            else:
+                resp, why = "Customer", f"Courier called {int(c)} times; customer didn't answer."
+        elif g == "No reason recorded":
+            resp, why = ("Courier" if st5 else "Check"), "Returned with no reason given by the courier."
+        else:
+            resp, why = "Check", "Check the courier's reason."
+        r["CourierResponsible"], r["CourierWhy"] = resp, why
+        r["CourierTalkTo"] = {
+            "Courier": f"{courier} account manager",
+            "Customer": "CS: call the customer today" if st3 else "CS: refusal follow-up / win-back",
+            "Customer data": "CS: fix phone/address with the customer",
+            "Brand (product)": "Quality / merchandising team",
+            "Brand (order)": "Order team",
+        }.get(resp, "CS: confirm with the customer")
         rows.append(r)
     out_orders = pd.DataFrame(rows)
 
@@ -370,12 +526,15 @@ ORDER_COLS = ["Brand", "OrderKey", "Order", "Created", "Cancelled", "Payment", "
               "ReceivedAtHub", "OutForDelivery", "BostaResult", "Attempts", "LastException", "MissedPromise",
               "Courier", "Status", "ReadyAt", "Stage", "H_OrderToReady", "H_ReadyToPickup", "H_OrderToPickup",
               "H_PickupToDelivered", "H_OrderToDelivered", "H_PickupToHub", "H_HubToOut", "H_OutToDelivered",
-              "H_WaitingNow", "ReadyDay", "DeliveryDays", "DeliveryDay", "DaysWithCourier", "DataIssue"]
+              "H_WaitingNow", "ReadyDay", "DeliveryDays", "DeliveryDay", "DaysWithCourier", "DataIssue",
+              "CourierIssues", "CourierRiskLevel", "CourierAgent", "CourierCallsVsAttempts", "CourierLastReason",
+              "CourierCalls", "CourierAnswered", "CourierTalkSeconds", "CourierLastCall", "CourierReasonGroup",
+              "CourierResponsible", "CourierWhy", "CourierTalkTo"]
 BOSTA_COLS = ["Brand", "Carrier", "Tracking", "Type", "State", "Order", "OrderKey", "IsTransfer", "COD", "Created",
               "PickedUp", "ReceivedAtHub", "OutForDelivery", "Delivered", "ReturnedToBusiness", "Cancelled",
               "Attempts", "LastException", "Calls", "ConfirmStatus", "CourierName", "Reschedules", "CustomerName",
               "CustomerPhone", "CustomerPhone2", "ParcelOutcome", "CallsBucket", "FailReasonGroup", "CallCheck",
-              "MatchIssue"]
+              "MatchIssue", "CourierFlags", "CourierRisk", "AnsweredCalls", "CallSeconds"]
 ATTEMPT_COLS = ["OrderKey", "Brand", "Carrier", "Tracking", "CourierName", "AttemptNo", "When", "Outcome",
                 "FakeAttempt", "Verified", "AttemptType", "ResultGroup"]
 

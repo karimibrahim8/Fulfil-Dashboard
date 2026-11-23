@@ -208,6 +208,8 @@ dash.calc('ov_kpi', {
       'Waiting At Brand 24h+': M.waitingBrand24(O), 'Waiting For Courier Pickup': M.waitingPickup(O),
       'Median Order To Ready (h)': M.medReady(O), 'Delivery Success %': M.successPct(O), 'Median Order To Delivered (h)': M.medOrderDelivered(O),
       'Ready Same Day %': M.readyShare(O, 'Same day'),
+      'Waiting At Brand Value': FX.sum(O.filter((o) => o.Stage === '1 Waiting at brand'), 'Total'),
+      'Waiting At Brand 24h+ Value': FX.sum(O.filter((o) => o.Stage === '1 Waiting at brand' && o.H_WaitingNow >= 24), 'Total'),
       'Orders To Ship (LM)': L.length ? M.toShip(L) : null, 'Fulfilled % (LM)': M.fulfilledPct(L), 'Median Order To Ready (h) (LM)': M.medReady(L),
       'Delivery Success % (LM)': M.successPct(L), 'Median Order To Delivered (h) (LM)': M.medOrderDelivered(L),
       'Data as of': orders.length ? orders[0].RefreshedAt : null,
@@ -279,7 +281,21 @@ dash.calc('al_courier', {
   inputs: ['orders'], title: 'Orders with the courier', description: 'Orders picked up and not yet delivered or returned, oldest first.',
   fn: (orders) => FX.ctx(orders).O.filter((o) => o.DaysWithCourier != null).sort((a, b) => b.DaysWithCourier - a.DaysWithCourier)
     .map((o) => ({ OrderKey: o.OrderKey, Brand: o.Brand, Order: o.Order, Courier: o.Courier, TrackingNumbers: o.TrackingNumbers, Governorate: o.Governorate,
-      PickedUp: o.PickedUp, 'Days With Courier': o.DaysWithCourier, Attempts: o.Attempts, LastException: o.LastException })),
+      PickedUp: o.PickedUp, 'Days With Courier': o.DaysWithCourier, Attempts: o.Attempts, LastException: o.LastException,
+      CourierRiskLevel: o.CourierRiskLevel, CourierIssues: o.CourierIssues, CourierCallsVsAttempts: o.CourierCallsVsAttempts })),
+});
+dash.calc('al_accountability', {
+  inputs: ['orders'], title: 'Who is responsible for each problem order',
+  description: 'Bosta and Mylerz orders still with the courier or returned, that the courier analysis flagged. Riskiest first. Who to talk to is worked out from the courier’s reason, calls and flags.',
+  fn: (orders) => {
+    const rank = { High: 1, Medium: 2, Low: 3 };
+    return FX.ctx(orders).O.filter((o) => (o.Courier === 'Bosta' || o.Courier === 'Mylerz') && (o.Stage === '3 With courier' || o.Stage === '5 Returned / failed') && o.CourierRiskLevel)
+      .sort((a, b) => (rank[a.CourierRiskLevel] - rank[b.CourierRiskLevel]) || ((b.PickedUp || '') > (a.PickedUp || '') ? 1 : -1))
+      .map((o) => ({ OrderKey: o.OrderKey, Brand: o.Brand, Order: o.Order, Courier: o.Courier, TrackingNumbers: o.TrackingNumbers, Stage: o.Stage,
+        CourierRiskLevel: o.CourierRiskLevel, CourierCallsVsAttempts: o.CourierCallsVsAttempts, CourierLastReason: o.CourierLastReason,
+        CourierIssues: o.CourierIssues, CourierCalls: o.CourierCalls, CourierAnswered: o.CourierAnswered, CourierTalkSeconds: o.CourierTalkSeconds,
+        CourierLastCall: o.CourierLastCall, CourierResponsible: o.CourierResponsible, CourierWhy: o.CourierWhy, CourierTalkTo: o.CourierTalkTo }));
+  },
 });
 
 dash.calc('pf_kpi', {

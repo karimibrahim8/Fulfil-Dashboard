@@ -45,6 +45,9 @@ jobs:
           MYLERZ_USER: ${{ secrets.MYLERZ_USER }}
           MYLERZ_PASSWORD: ${{ secrets.MYLERZ_PASSWORD }}
           ESTEBDAL_API_KEY: ${{ secrets.ESTEBDAL_API_KEY }}
+          SHOPIFY_DH_CLIENT_ID: ${{ secrets.SHOPIFY_DH_CLIENT_ID }}
+          SHOPIFY_DH_CLIENT_SECRET: ${{ secrets.SHOPIFY_DH_CLIENT_SECRET }}
+          BOSTA_DH_API_KEY: ${{ secrets.BOSTA_DH_API_KEY }}
         run: |
           mkdir -p site/data
           cd etl && python refresh.py
