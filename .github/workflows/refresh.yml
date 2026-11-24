@@ -2,9 +2,10 @@ name: Refresh data and deploy
 
 on:
   schedule:
-    # Every 2 hours, 8 AM to 10 PM Cairo winter time (UTC+2). Times are UTC.
-    - cron: "0 6-20/2 * * *"
-  workflow_dispatch: {}   # "Run workflow" button for a manual refresh
+    # Backup only: GitHub often drops or delays scheduled runs, so the reliable 2-hourly trigger is the
+    # Cloudflare Worker in tools/cloudflare-cron-worker.js. This runs twice a day in case the worker stops.
+    - cron: "37 5,15 * * *"
+  workflow_dispatch: {}   # "Run workflow" button, and what the Cloudflare timer calls every 2 hours
   push:
     branches: [main]
     paths: ["site/**", "etl/**", ".github/workflows/**"]

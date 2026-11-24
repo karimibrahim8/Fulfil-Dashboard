@@ -4,7 +4,10 @@ Static dashboard (Shopify + Bosta + Mylerz) hosted on Cloudflare Pages, refreshe
 
 - `site/` – the page (HTML/JS, d3). Data files are generated into `site/data/` at deploy time and are **never committed**.
 - `etl/refresh.py` – pulls the last `DAYS_BACK` days from the APIs; `etl/transform.py` – the Power BI calculated columns.
-- `.github/workflows/refresh.yml` – runs every 2 hours (8 AM–10 PM Cairo), on manual "Run workflow", and on every push.
+- `.github/workflows/refresh.yml` – runs when started by the Cloudflare timer, on manual "Run workflow", on every push,
+  and twice a day as a backup schedule.
+- `tools/cloudflare-cron-worker.js` – Cloudflare Worker whose Cron Trigger (`0 6-20/2 * * *`, UTC) starts the workflow every
+  2 hours, 8 AM–10 PM Cairo. GitHub's own schedule drops or delays many runs, so the timer lives on Cloudflare.
 - `tools/make_site.py` – rebuilds `site/` from the Claude dashboard page files.
 
 ## Secrets (Settings → Secrets and variables → Actions)
